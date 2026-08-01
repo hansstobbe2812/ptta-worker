@@ -1,0 +1,13 @@
+name = "ptta"
+main = "worker.js"
+compatibility_date = "2025-06-01"
+
+# Niet-geheime instellingen (secrets zet je in het Cloudflare-dashboard):
+[vars]
+GH_REPO = "PinkThaiTakeAway/pinkthaitakeaway.github.io"
+GH_BRANCH = "main"
+SITE_ORIGIN = "https://pinkthaitakeaway.nl"
+
+# Vrijdag 17:00 CEST (= 15:00 UTC) -> WhatsApp-afhaaloverzicht
+[triggers]
+crons = ["0 15 * * 5"]

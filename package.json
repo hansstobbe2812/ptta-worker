@@ -1,0 +1,5 @@
+{
+  "name": "ptta-worker",
+  "private": true,
+  "devDependencies": { "wrangler": "^3" }
+}
