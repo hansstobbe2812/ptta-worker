@@ -236,7 +236,8 @@ async function appendGitHub(env, pad, entry, cap, bericht) {
   return false;
 }
 function orderBericht(o) {
-  return `\uD83C\uDF38 Nieuwe bestelling #${o.order_id}\n${o.naam} — ${o.tel}\nAfhalen: ${o.afhaal}\n${o.bestelling}\nTotaal: ${o.totaal}\nBetaling: ${o.betaling}` + (o.opmerking ? `\nOpmerking: ${o.opmerking}` : "");
+  const kop = o.ingevroren ? "\u2744\uFE0F INGEVROREN \u2014 OP AFSPRAAK\n" : "";
+  return kop + `\uD83C\uDF38 Nieuwe bestelling #${o.order_id}\n${o.naam} — ${o.tel}\nAfhalen: ${o.afhaal}\n${o.bestelling}\nTotaal: ${o.totaal}\nBetaling: ${o.betaling}` + (o.opmerking ? `\nOpmerking: ${o.opmerking}` : "");
 }
 async function callMeBotConfig(env) {
   // Beheer kan dit instellen via callmebot.json in de repo; anders de secrets (CB_PHONE/CB_APIKEY).
@@ -265,7 +266,7 @@ async function stuurOverzicht(env) {
   let open = 0; const regels = [];
   for (const f of (Array.isArray(lijst) ? lijst : [])) {
     if (!f.name || !f.name.endsWith(".json") || !f.download_url) continue;
-    try { const o = await (await fetch(f.download_url)).json(); if (o && !o.afgehaald) { open++; regels.push(`#${o.order_id} ${o.naam} — ${o.totaal}`); } } catch (e) {}
+    try { const o = await (await fetch(f.download_url)).json(); if (o && !o.afgehaald) { open++; regels.push(`${o.ingevroren ? "\u2744\uFE0F " : ""}#${o.order_id} ${o.naam} — ${o.totaal}`); } } catch (e) {}
   }
   const tekst = open ? `\uD83C\uDF38 Afhaaloverzicht — ${open} openstaand\n` + regels.join("\n") : `\uD83C\uDF38 Afhaaloverzicht — geen openstaande bestellingen`;
   try { await sendWhatsApp(env, tekst); } catch (e) {}
