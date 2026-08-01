@@ -91,6 +91,8 @@ export default {
     let tokenGeldig = false;
     if (klanttoken) { const b = await leesJson(env, `klant-tokens/${klanttoken}.json`); if (b && b.telDigits === telDigits) tokenGeldig = true; }
     if (!tokenGeldig) { klanttoken = nieuwToken(); try { await putGitHub(env, `klant-tokens/${klanttoken}.json`, { telDigits, tel, naam, aangemaakt: nu }, "Klant-token"); } catch (e) {} }
+    // Telefoon->token-index, zodat beheer een klant een persoonlijke inloglink kan sturen
+    try { const idx = (await leesJson(env, "klant-token-index.json")) || {}; if (idx[telDigits] !== klanttoken) { idx[telDigits] = klanttoken; await putGitHub(env, "klant-token-index.json", idx, "token-index"); } } catch (e) {}
 
     try { await sendWhatsApp(env, orderBericht(order)); } catch (e) {}
     return json({ ok: ghOk, token: klanttoken }, ghOk ? 200 : 502, cors);
