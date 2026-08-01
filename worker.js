@@ -97,7 +97,7 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(Promise.all([stuurOverzicht(env), ruimOudeOrders(env)]));
+    ctx.waitUntil(Promise.all([stuurOverzicht(env), ruimOudeOrders(env), ruimLogs(env)]));
   },
 };
 
@@ -181,6 +181,27 @@ async function ordersVoorTel(env, telDigits) {
     uit.sort((a, b) => String(b.tijd).localeCompare(String(a.tijd)));
     return uit;
   } catch (e) { return []; }
+}
+async function ruimLogs(env) {
+  // Verwijdert maandbestanden van bezoek/audit/admin-logins ouder dan ~6 maanden.
+  // klant-tokens blijven staan (anders breken persoonlijke inloglinks).
+  const repo = env.GH_REPO, branch = env.GH_BRANCH || "main";
+  if (!repo || !env.GH_TOKEN) return;
+  const headers = { "Authorization": `Bearer ${env.GH_TOKEN}`, "Accept": "application/vnd.github+json", "User-Agent": "ptta-worker" };
+  const grens = new Date(Date.now() - 6 * 31 * 864e5).toISOString().slice(0, 7);
+  for (const map of ["bezoek", "audit", "admin-logins"]) {
+    try {
+      const l = await fetch(`https://api.github.com/repos/${repo}/contents/${map}?ref=${branch}&t=${Date.now()}`, { headers });
+      if (!l.ok) continue;
+      const files = await l.json();
+      for (const f of (Array.isArray(files) ? files : [])) {
+        const m = String(f.name || "").slice(0, 7);
+        if (/^\d{4}-\d{2}$/.test(m) && m < grens) {
+          try { await fetch(`https://api.github.com/repos/${repo}/contents/${f.path}`, { method: "DELETE", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ message: `oude ${map} opgeschoond`, sha: f.sha, branch }) }); } catch (e) {}
+        }
+      }
+    } catch (e) {}
+  }
 }
 async function appendGitHub(env, pad, entry, cap, bericht) {
   const repo = env.GH_REPO, branch = env.GH_BRANCH || "main";
