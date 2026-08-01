@@ -60,7 +60,7 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(stuurOverzicht(env));
+    ctx.waitUntil(Promise.all([stuurOverzicht(env), ruimOudeOrders(env)]));
   },
 };
 
@@ -126,4 +126,29 @@ async function stuurOverzicht(env) {
   }
   const tekst = open ? `\uD83C\uDF38 Afhaaloverzicht — ${open} openstaand\n` + regels.join("\n") : `\uD83C\uDF38 Afhaaloverzicht — geen openstaande bestellingen`;
   try { await sendWhatsApp(env, tekst); } catch (e) {}
+}
+
+// Wekelijkse opruiming: verwijdert AFGEHAALDE bestellingen ouder dan 90 dagen (openstaande blijven altijd staan)
+async function ruimOudeOrders(env) {
+  const repo = env.GH_REPO, branch = env.GH_BRANCH || "main";
+  if (!repo || !env.GH_TOKEN) return;
+  const headers = { "Authorization": `Bearer ${env.GH_TOKEN}`, "Accept": "application/vnd.github+json", "User-Agent": "ptta-worker" };
+  let lijst = [];
+  try {
+    const r = await fetch(`https://api.github.com/repos/${repo}/contents/bestellingen?ref=${branch}`, { headers });
+    if (r.ok) lijst = await r.json();
+  } catch (e) { return; }
+  const grens = new Date(Date.now() - 90 * 864e5).toISOString().slice(0, 10);   // ouder dan 90 dagen
+  for (const f of (Array.isArray(lijst) ? lijst : [])) {
+    if (!f.name || !f.name.endsWith(".json") || !f.download_url) continue;
+    if (f.name.slice(0, 10) >= grens) continue;                 // recent -> laten staan
+    try {
+      const o = await (await fetch(f.download_url)).json();
+      if (!o || !o.afgehaald) continue;                         // openstaand -> NOOIT verwijderen
+      await fetch(`https://api.github.com/repos/${repo}/contents/${f.path}`, {
+        method: "DELETE", headers: Object.assign({ "Content-Type": "application/json" }, headers),
+        body: JSON.stringify({ message: `Oude afgehaalde bestelling #${o.order_id} opgeruimd`, sha: f.sha, branch })
+      });
+    } catch (e) {}
+  }
 }
