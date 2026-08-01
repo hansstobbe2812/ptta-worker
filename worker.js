@@ -51,7 +51,7 @@ export default {
       const rec = await leesJson(env, `klant-tokens/${token}.json`);
       if (!rec || !rec.telDigits) return json({ ok: false }, 200, cors);
       const orders = await ordersVoorTel(env, rec.telDigits);
-      return json({ ok: true, naam: rec.naam || "", token, deelcode: token.slice(0, 8), aantal: orders.length, bestellingen: orders }, 200, cors);
+      return json({ ok: true, naam: rec.naam || "", tel: rec.tel || (orders[0] && orders[0].tel) || "", token, deelcode: token.slice(0, 8), aantal: orders.length, bestellingen: orders }, 200, cors);
     }
 
     const naam = String(d.naam || "").slice(0, 80).trim();
@@ -90,7 +90,7 @@ export default {
     let klanttoken = String(d.klanttoken || "").replace(/[^A-Za-z0-9]/g, "").slice(0, 48);
     let tokenGeldig = false;
     if (klanttoken) { const b = await leesJson(env, `klant-tokens/${klanttoken}.json`); if (b && b.telDigits === telDigits) tokenGeldig = true; }
-    if (!tokenGeldig) { klanttoken = nieuwToken(); try { await putGitHub(env, `klant-tokens/${klanttoken}.json`, { telDigits, naam, aangemaakt: nu }, "Klant-token"); } catch (e) {} }
+    if (!tokenGeldig) { klanttoken = nieuwToken(); try { await putGitHub(env, `klant-tokens/${klanttoken}.json`, { telDigits, tel, naam, aangemaakt: nu }, "Klant-token"); } catch (e) {} }
 
     try { await sendWhatsApp(env, orderBericht(order)); } catch (e) {}
     return json({ ok: ghOk, token: klanttoken }, ghOk ? 200 : 502, cors);
@@ -175,7 +175,7 @@ async function ordersVoorTel(env, telDigits) {
         const rr = await fetch(`https://api.github.com/repos/${repo}/contents/${f.path}?ref=${branch}&t=${Date.now()}`, { headers });
         if (!rr.ok) continue;
         const o = JSON.parse(fromB64((await rr.json()).content));
-        if (String(o.tel || "").replace(/\D/g, "") === telDigits) uit.push({ order_id: o.order_id, tijd: o.tijd, bestelling: o.bestelling, totaal: o.totaal, afhaal: o.afhaal, afgehaald: !!o.afgehaald });
+        if (String(o.tel || "").replace(/\D/g, "") === telDigits) uit.push({ order_id: o.order_id, tijd: o.tijd, bestelling: o.bestelling, totaal: o.totaal, afhaal: o.afhaal, afgehaald: !!o.afgehaald, tel: o.tel });
       } catch (e) {}
     }
     uit.sort((a, b) => String(b.tijd).localeCompare(String(a.tijd)));
