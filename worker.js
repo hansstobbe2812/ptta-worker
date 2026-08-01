@@ -163,10 +163,22 @@ async function appendGitHub(env, pad, entry, cap, bericht) {
 function orderBericht(o) {
   return `\uD83C\uDF38 Nieuwe bestelling #${o.order_id}\n${o.naam} — ${o.tel}\nAfhalen: ${o.afhaal}\n${o.bestelling}\nTotaal: ${o.totaal}\nBetaling: ${o.betaling}` + (o.opmerking ? `\nOpmerking: ${o.opmerking}` : "");
 }
+async function callMeBotConfig(env) {
+  // Beheer kan dit instellen via callmebot.json in de repo; anders de secrets (CB_PHONE/CB_APIKEY).
+  try {
+    const repo = env.GH_REPO, branch = env.GH_BRANCH || "main";
+    if (repo && env.GH_TOKEN) {
+      const r = await fetch(`https://api.github.com/repos/${repo}/contents/callmebot.json?ref=${branch}&t=${Date.now()}`, { headers: { "Authorization": `Bearer ${env.GH_TOKEN}`, "Accept": "application/vnd.github+json", "User-Agent": "ptta-worker" } });
+      if (r.ok) { const j = await r.json(); const c = JSON.parse(fromB64(j.content)); const phone = String((c && (c.tel || c.phone)) || "").replace(/\D/g, ""); const apikey = String((c && c.apikey) || "").trim(); if (phone && apikey) return { phone, apikey }; }
+    }
+  } catch (e) {}
+  return { phone: env.CB_PHONE, apikey: env.CB_APIKEY };
+}
 async function sendWhatsApp(env, tekst) {
-  if (!env.CB_PHONE || !env.CB_APIKEY) return;
+  const cfg = await callMeBotConfig(env);
+  if (!cfg.phone || !cfg.apikey) return;
   const url = "https://api.callmebot.com/whatsapp.php" +
-    `?phone=${encodeURIComponent(env.CB_PHONE)}&text=${encodeURIComponent(tekst)}&apikey=${encodeURIComponent(env.CB_APIKEY)}`;
+    `?phone=${encodeURIComponent(cfg.phone)}&text=${encodeURIComponent(tekst)}&apikey=${encodeURIComponent(cfg.apikey)}`;
   await fetch(url);
 }
 async function stuurOverzicht(env) {
