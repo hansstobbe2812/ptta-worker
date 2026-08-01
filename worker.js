@@ -24,6 +24,26 @@ export default {
     let d;
     try { d = await request.json(); } catch (e) { return json({ ok: false, fout: "ongeldige body" }, 400, cors); }
 
+    // --- Bezoek-tracking (voedt de Bezoek-tab); geo komt uit Cloudflare, geen externe lookup ---
+    if (d && d.soort === "bezoek") {
+      const nu = new Date();
+      const cf = request.cf || {};
+      const visit = {
+        tijd: nu.toISOString(),
+        vid: String(d.vid || "").replace(/[^A-Za-z0-9]/g, "").slice(0, 64),
+        type: (["klant", "beheer", "volg"].indexOf(String(d.type || "")) >= 0) ? d.type : "klant",
+        herkomst: (["direct", "whatsapp", "google", "overig"].indexOf(String(d.herkomst || "")) >= 0) ? d.herkomst : "overig",
+        toestel: String(d.toestel || "") === "mobiel" ? "mobiel" : "desktop",
+        taal: String(d.taal || "").slice(0, 5),
+        via: String(d.via || "").slice(0, 60),
+        klant: !!d.klanttoken,
+        land: String(cf.country || "").slice(0, 4),
+        plaats: String(cf.city || "").slice(0, 60),
+      };
+      const okV = await appendGitHub(env, `bezoek/${nu.toISOString().slice(0, 7)}.json`, visit, 8000, "bezoek");
+      return json({ ok: okV }, okV ? 200 : 502, cors);
+    }
+
     const naam = String(d.naam || "").slice(0, 80).trim();
     const tel = String(d.tel || "").slice(0, 30).trim();
     const bestelling = String(d.bestelling || "").slice(0, 4000);
@@ -103,6 +123,42 @@ async function putGitHub(env, pad, obj, bericht) {
   const body = { message: bericht, content: b64(JSON.stringify(obj, null, 2)), branch };
   if (sha) body.sha = sha;
   try { const r = await fetch(url, { method: "PUT", headers, body: JSON.stringify(body) }); return r.ok; } catch (e) { return false; }
+}
+function fromB64(s) {
+  const bin = atob(String(s || "").replace(/\n/g, ""));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+async function appendGitHub(env, pad, entry, cap, bericht) {
+  const repo = env.GH_REPO, branch = env.GH_BRANCH || "main";
+  if (!repo || !env.GH_TOKEN) return false;
+  const url = `https://api.github.com/repos/${repo}/contents/${pad}`;
+  const headers = {
+    "Authorization": `Bearer ${env.GH_TOKEN}`,
+    "Accept": "application/vnd.github+json",
+    "User-Agent": "ptta-worker",
+    "Content-Type": "application/json",
+  };
+  for (let poging = 0; poging < 4; poging++) {
+    let arr = [], sha;
+    try {
+      const g = await fetch(url + `?ref=${branch}&t=${Date.now()}`, { headers });
+      if (g.ok) { const j = await g.json(); sha = j.sha; try { arr = JSON.parse(fromB64(j.content)); } catch (e) { arr = []; } }
+    } catch (e) {}
+    if (!Array.isArray(arr)) arr = [];
+    arr.unshift(entry);
+    if (cap && arr.length > cap) arr = arr.slice(0, cap);
+    const body = { message: bericht || ("append " + pad), content: b64(JSON.stringify(arr)), branch };
+    if (sha) body.sha = sha;
+    try {
+      const r = await fetch(url, { method: "PUT", headers, body: JSON.stringify(body) });
+      if (r.ok) return true;
+      if (r.status === 409 || r.status === 422) continue;   // sha-conflict -> opnieuw
+      return false;
+    } catch (e) { return false; }
+  }
+  return false;
 }
 function orderBericht(o) {
   return `\uD83C\uDF38 Nieuwe bestelling #${o.order_id}\n${o.naam} — ${o.tel}\nAfhalen: ${o.afhaal}\n${o.bestelling}\nTotaal: ${o.totaal}\nBetaling: ${o.betaling}` + (o.opmerking ? `\nOpmerking: ${o.opmerking}` : "");
