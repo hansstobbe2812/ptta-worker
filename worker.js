@@ -32,6 +32,12 @@ export default {
       return json({ ok: false, fout: "onvolledige bestelling" }, 400, cors);
     }
 
+    // Bot-check (Cloudflare Turnstile) — alleen afdwingen als het secret is ingesteld (anders veilig-uit)
+    if (env.TURNSTILE_SECRET) {
+      const okBot = await verifyTurnstile(env, d.turnstile, request.headers.get("CF-Connecting-IP"));
+      if (!okBot) return json({ ok: false, fout: "botcheck mislukt" }, 403, cors);
+    }
+
     const id = (String(d.order_id || "").replace(/\D/g, "").slice(0, 8)) || String(Date.now()).slice(-6);
     const nu = new Date().toISOString();
     const order = {
@@ -65,6 +71,18 @@ function json(obj, status, cors) {
   });
 }
 function safeParse(s) { try { return typeof s === "string" ? JSON.parse(s) : (s || null); } catch (e) { return null; } }
+async function verifyTurnstile(env, token, ip) {
+  if (!token) return false;
+  try {
+    const form = new URLSearchParams();
+    form.set("secret", env.TURNSTILE_SECRET);
+    form.set("response", String(token));
+    if (ip) form.set("remoteip", ip);
+    const r = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", { method: "POST", body: form });
+    const j = await r.json();
+    return !!(j && j.success);
+  } catch (e) { return false; }
+}
 function b64(str) {
   const bytes = new TextEncoder().encode(str);
   let bin = ""; for (const b of bytes) bin += String.fromCharCode(b);
