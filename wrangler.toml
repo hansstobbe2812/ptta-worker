@@ -1,4 +1,5 @@
 name = "ptta"
+account_id = "a11d38e12aef44f128e577ffed6b4549"
 main = "worker.js"
 compatibility_date = "2025-06-01"
 
