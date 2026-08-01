@@ -44,6 +44,16 @@ export default {
       return json({ ok: okV }, okV ? 200 : 502, cors);
     }
 
+    // --- Mijn account: bestellingen van een klant opzoeken via persoonlijke token ---
+    if (d && d.soort === "account") {
+      const token = String(d.token || "").replace(/[^A-Za-z0-9]/g, "").slice(0, 48);
+      if (!token) return json({ ok: false }, 200, cors);
+      const rec = await leesJson(env, `klant-tokens/${token}.json`);
+      if (!rec || !rec.telDigits) return json({ ok: false }, 200, cors);
+      const orders = await ordersVoorTel(env, rec.telDigits);
+      return json({ ok: true, naam: rec.naam || "", token, deelcode: token.slice(0, 8), aantal: orders.length, bestellingen: orders }, 200, cors);
+    }
+
     const naam = String(d.naam || "").slice(0, 80).trim();
     const tel = String(d.tel || "").slice(0, 30).trim();
     const bestelling = String(d.bestelling || "").slice(0, 4000);
@@ -75,8 +85,15 @@ export default {
 
     const pad = `bestellingen/${nu.slice(0, 10)}-${id}.json`;
     const ghOk = await putGitHub(env, pad, order, `Bestelling #${id} (${naam})`);
+
+    // Persoonlijk klant-token (Mijn account via inloglink): hergebruik geldig bestaand, anders nieuw
+    let klanttoken = String(d.klanttoken || "").replace(/[^A-Za-z0-9]/g, "").slice(0, 48);
+    let tokenGeldig = false;
+    if (klanttoken) { const b = await leesJson(env, `klant-tokens/${klanttoken}.json`); if (b && b.telDigits === telDigits) tokenGeldig = true; }
+    if (!tokenGeldig) { klanttoken = nieuwToken(); try { await putGitHub(env, `klant-tokens/${klanttoken}.json`, { telDigits, naam, aangemaakt: nu }, "Klant-token"); } catch (e) {} }
+
     try { await sendWhatsApp(env, orderBericht(order)); } catch (e) {}
-    return json({ ok: ghOk }, ghOk ? 200 : 502, cors);
+    return json({ ok: ghOk, token: klanttoken }, ghOk ? 200 : 502, cors);
   },
 
   async scheduled(event, env, ctx) {
@@ -129,6 +146,41 @@ function fromB64(s) {
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return new TextDecoder().decode(bytes);
+}
+function nieuwToken() {
+  const a = new Uint8Array(24); crypto.getRandomValues(a);
+  let s = ""; for (const b of a) s += (b % 36).toString(36); return s.slice(0, 32);
+}
+async function leesJson(env, pad) {
+  const repo = env.GH_REPO, branch = env.GH_BRANCH || "main";
+  if (!repo || !env.GH_TOKEN) return null;
+  try {
+    const r = await fetch(`https://api.github.com/repos/${repo}/contents/${pad}?ref=${branch}&t=${Date.now()}`, { headers: { "Authorization": `Bearer ${env.GH_TOKEN}`, "Accept": "application/vnd.github+json", "User-Agent": "ptta-worker" } });
+    if (!r.ok) return null;
+    return JSON.parse(fromB64((await r.json()).content));
+  } catch (e) { return null; }
+}
+async function ordersVoorTel(env, telDigits) {
+  const repo = env.GH_REPO, branch = env.GH_BRANCH || "main";
+  if (!repo || !env.GH_TOKEN || !telDigits) return [];
+  const headers = { "Authorization": `Bearer ${env.GH_TOKEN}`, "Accept": "application/vnd.github+json", "User-Agent": "ptta-worker" };
+  try {
+    const grens = new Date(Date.now() - 120 * 864e5).toISOString().slice(0, 10);
+    const l = await fetch(`https://api.github.com/repos/${repo}/contents/bestellingen?ref=${branch}&t=${Date.now()}`, { headers });
+    if (!l.ok) return [];
+    const files = (await l.json()).filter(f => f.name && f.name.endsWith(".json") && f.name.slice(0, 10) >= grens);
+    const uit = [];
+    for (const f of files) {
+      try {
+        const rr = await fetch(`https://api.github.com/repos/${repo}/contents/${f.path}?ref=${branch}&t=${Date.now()}`, { headers });
+        if (!rr.ok) continue;
+        const o = JSON.parse(fromB64((await rr.json()).content));
+        if (String(o.tel || "").replace(/\D/g, "") === telDigits) uit.push({ order_id: o.order_id, tijd: o.tijd, bestelling: o.bestelling, totaal: o.totaal, afhaal: o.afhaal, afgehaald: !!o.afgehaald });
+      } catch (e) {}
+    }
+    uit.sort((a, b) => String(b.tijd).localeCompare(String(a.tijd)));
+    return uit;
+  } catch (e) { return []; }
 }
 async function appendGitHub(env, pad, entry, cap, bericht) {
   const repo = env.GH_REPO, branch = env.GH_BRANCH || "main";
