@@ -39,6 +39,7 @@ export default {
         klant: !!d.klanttoken,
         land: String(cf.country || "").slice(0, 4),
         plaats: String(cf.city || "").slice(0, 60),
+        open: (typeof d.open === "boolean") ? d.open : null,
       };
       const okV = await appendGitHub(env, `bezoek/${nu.toISOString().slice(0, 7)}.json`, visit, 8000, "bezoek");
       return json({ ok: okV }, okV ? 200 : 502, cors);
