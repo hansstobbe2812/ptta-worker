@@ -95,12 +95,24 @@ export default {
     // Telefoon->token-index, zodat beheer een klant een persoonlijke inloglink kan sturen
     try { const idx = (await leesJson(env, "klant-token-index.json")) || {}; if (idx[telDigits] !== klanttoken) { idx[telDigits] = klanttoken; await putGitHub(env, "klant-token-index.json", idx, "token-index"); } } catch (e) {}
 
-    try { await sendWhatsApp(env, orderBericht(order)); } catch (e) {}
     return json({ ok: ghOk, token: klanttoken }, ghOk ? 200 : 502, cors);
   },
 
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(Promise.all([stuurOverzicht(env), ruimOudeOrders(env), ruimLogs(env)]));
+    ctx.waitUntil((async () => {
+      // Alleen draaien 1 minuut ná sluiting: vrijdag 17:00 lokale tijd (Europe/Amsterdam).
+      // Twee cron-tijden (zomer/wintertijd); alleen die op lokaal 17:0x stuurt daadwerkelijk.
+      let hh = -1;
+      try {
+        const parts = new Intl.DateTimeFormat("nl-NL", { timeZone: "Europe/Amsterdam", hour: "2-digit", hour12: false }).formatToParts(new Date());
+        hh = Number((parts.find(p => p.type === "hour") || {}).value);
+      } catch (e) {}
+      if (hh === 17) {
+        await stuurOverzicht(env);
+        await ruimOudeOrders(env);
+        await ruimLogs(env);
+      }
+    })());
   },
 };
 
@@ -269,7 +281,7 @@ async function stuurOverzicht(env) {
     if (!f.name || !f.name.endsWith(".json") || !f.download_url) continue;
     try { const o = await (await fetch(f.download_url)).json(); if (o && !o.afgehaald) { open++; regels.push(`${o.ingevroren ? "\u2744\uFE0F " : ""}#${o.order_id} ${o.naam} — ${o.totaal}`); } } catch (e) {}
   }
-  const tekst = open ? `\uD83C\uDF38 Afhaaloverzicht — ${open} openstaand\n` + regels.join("\n") : `\uD83C\uDF38 Afhaaloverzicht — geen openstaande bestellingen`;
+  const tekst = open ? `\uD83D\uDD12 Bestellen gesloten — ${open} bestelling(en)\n` + regels.join("\n") : `\uD83D\uDD12 Bestellen gesloten — geen bestellingen`;
   try { await sendWhatsApp(env, tekst); } catch (e) {}
 }
 
