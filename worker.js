@@ -101,18 +101,25 @@ export default {
 
   async scheduled(event, env, ctx) {
     ctx.waitUntil((async () => {
-      // Alleen draaien 1 minuut ná sluiting: vrijdag 17:00 lokale tijd (Europe/Amsterdam).
-      // Twee cron-tijden (zomer/wintertijd); alleen die op lokaal 17:0x stuurt daadwerkelijk.
-      let hh = -1;
       try {
-        const parts = new Intl.DateTimeFormat("nl-NL", { timeZone: "Europe/Amsterdam", hour: "2-digit", hour12: false }).formatToParts(new Date());
-        hh = Number((parts.find(p => p.type === "hour") || {}).value);
+        // Stuur het besteloverzicht ~1 min ná de ingestelde sluiting (dag+tijd uit bedrijf.json),
+        // in lokale tijd (Europe/Amsterdam) -> instelling-, zomer- en wintertijd-proof.
+        const cfg = await leesJson(env, "bedrijf.json");
+        const af = (cfg && cfg.afhaal) || {};
+        const sluitDag = (typeof af.sluitDag === "number") ? af.sluitDag : 5;
+        const st = String(af.sluitTijd || "17:00").split(":");
+        const closeMin = (Number(st[0]) || 0) * 60 + (Number(st[1]) || 0);
+        const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Amsterdam", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date());
+        const gv = t => (parts.find(p => p.type === t) || {}).value;
+        const wd = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }[gv("weekday")];
+        const nowMin = Number(gv("hour")) * 60 + Number(gv("minute"));
+        const diff = nowMin - closeMin;
+        if (wd === sluitDag && diff >= 1 && diff <= 10) {
+          await stuurOverzicht(env);
+          await ruimOudeOrders(env);
+          await ruimLogs(env);
+        }
       } catch (e) {}
-      if (hh === 17) {
-        await stuurOverzicht(env);
-        await ruimOudeOrders(env);
-        await ruimLogs(env);
-      }
     })());
   },
 };
