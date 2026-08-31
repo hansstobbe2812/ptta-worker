@@ -71,6 +71,22 @@ export default {
       return json({ ok: true }, 200, cors);
     }
 
+    // --- Huidige CallMeBot-instelling teruggeven (alleen beheer) ---
+    if (d && d.soort === "callmebot-status") {
+      const tok = String(d.token || "");
+      if (!tok) return json({ ok: false }, 200, cors);
+      let mag = false;
+      try {
+        const r = await fetch(`https://api.github.com/repos/${env.GH_REPO}`, { headers: { "Authorization": `Bearer ${tok}`, "User-Agent": "ptta-worker", "Accept": "application/vnd.github+json" } });
+        mag = r.ok;
+      } catch (e) {}
+      if (!mag) return json({ ok: false }, 200, cors);
+      const file = await leesJson(env, "callmebot.json");
+      const bron = (file && (file.tel || file.phone) && file.apikey) ? "file" : "secrets";
+      const cfg = await callMeBotConfig(env);
+      return json({ ok: true, tel: cfg.phone || "", apikey: cfg.apikey || "", bron }, 200, cors);
+    }
+
     const naam = String(d.naam || "").slice(0, 80).trim();
     const tel = String(d.tel || "").slice(0, 30).trim();
     const bestelling = String(d.bestelling || "").slice(0, 4000);
