@@ -55,6 +55,22 @@ export default {
       return json({ ok: true, naam: rec.naam || "", tel: rec.tel || (orders[0] && orders[0].tel) || "", token, deelcode: token.slice(0, 8), aantal: orders.length, bestellingen: orders }, 200, cors);
     }
 
+    // --- Test-WhatsApp (alleen beheer: token moet toegang tot de repo hebben) ---
+    if (d && d.soort === "test-whatsapp") {
+      const tok = String(d.token || "");
+      if (!tok) return json({ ok: false, fout: "geen token" }, 200, cors);
+      let mag = false;
+      try {
+        const r = await fetch(`https://api.github.com/repos/${env.GH_REPO}`, { headers: { "Authorization": `Bearer ${tok}`, "User-Agent": "ptta-worker", "Accept": "application/vnd.github+json" } });
+        mag = r.ok;
+      } catch (e) {}
+      if (!mag) return json({ ok: false, fout: "geen toegang" }, 200, cors);
+      const cfg = await callMeBotConfig(env);
+      if (!cfg.phone || !cfg.apikey) return json({ ok: false, fout: "callmebot niet ingesteld" }, 200, cors);
+      try { await sendWhatsApp(env, "\uD83E\uDDEA Test-bericht van Pink Thai TakeAway \u2014 WhatsApp werkt!"); } catch (e) { return json({ ok: false, fout: "verzenden mislukt" }, 200, cors); }
+      return json({ ok: true }, 200, cors);
+    }
+
     const naam = String(d.naam || "").slice(0, 80).trim();
     const tel = String(d.tel || "").slice(0, 30).trim();
     const bestelling = String(d.bestelling || "").slice(0, 4000);
