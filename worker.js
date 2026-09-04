@@ -28,6 +28,12 @@ export default {
     if (d && d.soort === "bezoek") {
       const nu = new Date();
       const cf = request.cf || {};
+      // Bot-detectie: datacenter-herkomst of bot-user-agent (crawlers vervuilen anders de bezoekstatistiek)
+      const _ua = String(request.headers.get("user-agent") || "").toLowerCase();
+      const _org = String(cf.asOrganization || "").toLowerCase();
+      const _botUa = !_ua || /bot|crawl|spider|slurp|headless|phantom|python|curl|wget|scan|monitor|preview|lighthouse|pagespeed|semrush|ahrefs|facebookexternalhit|whatsapp/.test(_ua);
+      const _dc = ["amazon","aws","google","microsoft","azure","hetzner","ovh","digitalocean","linode","akamai","leaseweb","contabo","vultr","alibaba","tencent","oracle","scaleway","fastly","m247","choopa","datacamp","censys","shodan","palo alto"];
+      const _isBot = _botUa || _dc.some(function(o){ return _org.indexOf(o) >= 0; });
       const visit = {
         tijd: nu.toISOString(),
         vid: String(d.vid || "").replace(/[^A-Za-z0-9]/g, "").slice(0, 64),
@@ -40,6 +46,7 @@ export default {
         land: String(cf.country || "").slice(0, 4),
         plaats: String(cf.city || "").slice(0, 60),
         open: (typeof d.open === "boolean") ? d.open : null,
+        bot: _isBot,
       };
       const okV = await appendGitHub(env, `bezoek/${nu.toISOString().slice(0, 7)}.json`, visit, 8000, "bezoek");
       return json({ ok: okV }, okV ? 200 : 502, cors);
