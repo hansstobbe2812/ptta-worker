@@ -134,13 +134,17 @@ export default {
     // Telefoon->token-index, zodat beheer een klant een persoonlijke inloglink kan sturen
     try { const idx = (await leesJson(env, "klant-token-index.json")) || {}; if (idx[telDigits] !== klanttoken) { idx[telDigits] = klanttoken; await putGitHub(env, "klant-token-index.json", idx, "token-index"); } } catch (e) {}
 
-    try { await sendWhatsApp(env, orderBericht(order)); } catch (e) {}
+    const _gemeld = await sendWhatsApp(env, orderBericht(order)).catch(() => false);
+    if (!_gemeld) {
+      try { const lijst = (await leesJson(env, "gemiste-meldingen.json")) || []; lijst.push({ id, tekst: orderBericht(order), tijd: nu }); await putGitHub(env, "gemiste-meldingen.json", lijst, `Gemiste melding #${id}`); } catch (e) {}
+    }
     return json({ ok: ghOk, token: klanttoken }, ghOk ? 200 : 502, cors);
   },
 
   async scheduled(event, env, ctx) {
     ctx.waitUntil((async () => {
       try {
+        await verwerkGemist(env);   // elke 15 min: eventueel gemiste ordermeldingen alsnog versturen
         // Stuur het besteloverzicht ~1 min ná de ingestelde sluiting (dag+tijd uit bedrijf.json),
         // in lokale tijd (Europe/Amsterdam) -> instelling-, zomer- en wintertijd-proof.
         const cfg = await leesJson(env, "bedrijf.json");
@@ -312,10 +316,25 @@ async function callMeBotConfig(env) {
 }
 async function sendWhatsApp(env, tekst) {
   const cfg = await callMeBotConfig(env);
-  if (!cfg.phone || !cfg.apikey) return;
+  if (!cfg.phone || !cfg.apikey) return false;
   const url = "https://api.callmebot.com/whatsapp.php" +
     `?phone=${encodeURIComponent(cfg.phone)}&text=${encodeURIComponent(tekst)}&apikey=${encodeURIComponent(cfg.apikey)}`;
-  await fetch(url);
+  for (let i = 0; i < 3; i++) {
+    try { const r = await fetch(url); if (r.ok) return true; } catch (e) {}
+  }
+  return false;
+}
+// Gemiste ordermeldingen opnieuw versturen (backend-vangnet: mocht WhatsApp even haperen)
+async function verwerkGemist(env) {
+  let lijst;
+  try { lijst = await leesJson(env, "gemiste-meldingen.json"); } catch (e) { return; }
+  if (!Array.isArray(lijst) || !lijst.length) return;
+  const rest = [];
+  for (const m of lijst) {
+    const ok = (m && m.tekst) ? await sendWhatsApp(env, m.tekst).catch(() => false) : true;
+    if (!ok) rest.push(m);
+  }
+  if (rest.length !== lijst.length) { try { await putGitHub(env, "gemiste-meldingen.json", rest, "gemiste meldingen verwerkt"); } catch (e) {} }
 }
 async function stuurOverzicht(env) {
   const repo = env.GH_REPO, branch = env.GH_BRANCH || "main";
