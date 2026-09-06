@@ -132,11 +132,13 @@ export default {
     if (klanttoken) { const b = await leesJson(env, `klant-tokens/${klanttoken}.json`); if (b && b.telDigits === telDigits) tokenGeldig = true; }
     if (!tokenGeldig) { klanttoken = nieuwToken(); try { await putGitHub(env, `klant-tokens/${klanttoken}.json`, { telDigits, tel, naam, aangemaakt: nu }, "Klant-token"); } catch (e) {} }
     // Telefoon->token-index, zodat beheer een klant een persoonlijke inloglink kan sturen
-    try { const idx = (await leesJson(env, "klant-token-index.json")) || {}; if (idx[telDigits] !== klanttoken) { idx[telDigits] = klanttoken; await putGitHub(env, "klant-token-index.json", idx, "token-index"); } } catch (e) {}
+    let nieuweKlant = false;
+    try { const idx = (await leesJson(env, "klant-token-index.json")) || {}; nieuweKlant = !idx[telDigits]; if (idx[telDigits] !== klanttoken) { idx[telDigits] = klanttoken; await putGitHub(env, "klant-token-index.json", idx, "token-index"); } } catch (e) {}
 
-    const _gemeld = await sendWhatsApp(env, orderBericht(order)).catch(() => false);
+    const _bericht = orderBericht(order, nieuweKlant);
+    const _gemeld = await sendWhatsApp(env, _bericht).catch(() => false);
     if (!_gemeld) {
-      try { const lijst = (await leesJson(env, "gemiste-meldingen.json")) || []; lijst.push({ id, tekst: orderBericht(order), tijd: nu }); await putGitHub(env, "gemiste-meldingen.json", lijst, `Gemiste melding #${id}`); } catch (e) {}
+      try { const lijst = (await leesJson(env, "gemiste-meldingen.json")) || []; lijst.push({ id, tekst: _bericht, tijd: nu }); await putGitHub(env, "gemiste-meldingen.json", lijst, `Gemiste melding #${id}`); } catch (e) {}
     }
     return json({ ok: ghOk, token: klanttoken }, ghOk ? 200 : 502, cors);
   },
@@ -299,9 +301,10 @@ async function appendGitHub(env, pad, entry, cap, bericht) {
   }
   return false;
 }
-function orderBericht(o) {
+function orderBericht(o, nieuweKlant) {
   const kop = o.ingevroren ? "\u2744\uFE0F INGEVROREN \u2014 OP AFSPRAAK\n" : "";
-  return kop + `\uD83C\uDF38 Nieuwe bestelling #${o.order_id}\n${o.naam} — ${o.tel}\nAfhalen: ${o.afhaal}\n${o.bestelling}\nTotaal: ${o.totaal}\nBetaling: ${o.betaling}` + (o.opmerking ? `\nOpmerking: ${o.opmerking}` : "");
+  const kk = (nieuweKlant === true) ? "\uD83C\uDD95 NIEUWE KLANT!\n" : (nieuweKlant === false ? "\uD83D\uDD01 Terugkerende klant\n" : "");
+  return kop + kk + `\uD83C\uDF38 Nieuwe bestelling #${o.order_id}\n${o.naam} — ${o.tel}\nAfhalen: ${o.afhaal}\n${o.bestelling}\nTotaal: ${o.totaal}\nBetaling: ${o.betaling}` + (o.opmerking ? `\nOpmerking: ${o.opmerking}` : "");
 }
 async function callMeBotConfig(env) {
   // Beheer kan dit instellen via callmebot.json in de repo; anders de secrets (CB_PHONE/CB_APIKEY).
