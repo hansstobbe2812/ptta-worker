@@ -59,7 +59,21 @@ export default {
       const rec = await leesJson(env, `klant-tokens/${token}.json`);
       if (!rec || !rec.telDigits) return json({ ok: false }, 200, cors);
       const orders = await ordersVoorTel(env, rec.telDigits);
-      return json({ ok: true, naam: rec.naam || "", tel: rec.tel || (orders[0] && orders[0].tel) || "", taal: rec.taal || "", beloningGebruikt: rec.beloningGebruikt || 0, token, deelcode: token.slice(0, 8), aantal: orders.length, bestellingen: orders }, 200, cors);
+      let belRechten = Array.isArray(rec.belRechten) ? rec.belRechten.slice() : [];
+      try {
+        const loy = await loyConfig(env);
+        if (loy.aan) {
+          const stempels = orders.filter(o => bedragParse(o.totaal) >= (loy.min || 0)).length;
+          const beschikbaar = Math.floor(stempels / (loy.doel || 10)) - (rec.beloningGebruikt || 0);
+          if (beschikbaar >= 1) {
+            let ch = false;
+            if (loy.gerechtAan && belRechten.indexOf("gerecht") < 0) { belRechten.push("gerecht"); ch = true; }
+            if (loy.kortingAan && belRechten.indexOf("korting") < 0) { belRechten.push("korting"); ch = true; }
+            if (ch) { try { await putGitHub(env, `klant-tokens/${token}.json`, Object.assign({}, rec, { belRechten }), "Beloning-rechten vastgelegd"); } catch (e) {} }
+          }
+        }
+      } catch (e) {}
+      return json({ ok: true, naam: rec.naam || "", tel: rec.tel || (orders[0] && orders[0].tel) || "", taal: rec.taal || "", beloningGebruikt: rec.beloningGebruikt || 0, belRechten, token, deelcode: token.slice(0, 8), aantal: orders.length, bestellingen: orders }, 200, cors);
     }
 
     // --- Test-WhatsApp (alleen beheer: token moet toegang tot de repo hebben) ---
@@ -113,20 +127,28 @@ export default {
     let tokenGeldig = false; let tokenRec = null;
     if (klanttoken) { tokenRec = await leesJson(env, `klant-tokens/${klanttoken}.json`); if (tokenRec && tokenRec.telDigits === telDigits) tokenGeldig = true; }
     if (!tokenGeldig) { klanttoken = nieuwToken(); tokenRec = null; }
-    // Spaarkaart-beloning SERVER-SIDE valideren (voorkomt hergebruik/misbruik van een volle kaart)
+    // Spaarkaart-beloning SERVER-SIDE valideren + rechten vastleggen (blijven geldig, ook als beheer een type later uitzet)
     let belText = "", eindTotaal = String(d.totaal || "").slice(0, 40);
-    if (d.gebruikBeloning) {
+    let belRechten = (tokenRec && Array.isArray(tokenRec.belRechten)) ? tokenRec.belRechten.slice() : [];
+    if (d.gebruikBeloning || tokenGeldig) {
       try {
         const loy = await loyConfig(env);
-        const type = (d.beloningType === "korting") ? "korting" : "gerecht";
-        const typeAan = (type === "korting") ? loy.kortingAan : loy.gerechtAan;
-        const best = tokenGeldig ? await ordersVoorTel(env, telDigits) : [];
-        const stempels = best.filter(o => bedragParse(o.totaal) >= (loy.min || 0)).length;
-        const beschikbaar = Math.floor(stempels / (loy.doel || 10)) - ((tokenRec && tokenRec.beloningGebruikt) || 0);
-        if (loy.aan && typeAan && beschikbaar >= 1) {
-          belText = (type === "korting") ? ((loy.korting || 10) + "% korting") : (loy.beloning || "beloning");
-          if (type === "korting") { const vol = bedragParse(d.totaalVol || d.totaal); if (vol > 0) eindTotaal = euro(vol * (1 - (loy.korting || 10) / 100)); }
-        } else if (d.totaalVol) { eindTotaal = String(d.totaalVol).slice(0, 40); }
+        if (loy.aan && tokenGeldig) {
+          const best = await ordersVoorTel(env, telDigits);
+          const stempels = best.filter(o => bedragParse(o.totaal) >= (loy.min || 0)).length;
+          const beschikbaar = Math.floor(stempels / (loy.doel || 10)) - ((tokenRec && tokenRec.beloningGebruikt) || 0);
+          if (beschikbaar >= 1) {
+            if (loy.gerechtAan && belRechten.indexOf("gerecht") < 0) belRechten.push("gerecht");
+            if (loy.kortingAan && belRechten.indexOf("korting") < 0) belRechten.push("korting");
+            if (d.gebruikBeloning) {
+              const type = (d.beloningType === "korting") ? "korting" : "gerecht";
+              if (belRechten.indexOf(type) >= 0) {
+                belText = (type === "korting") ? ((loy.korting || 10) + "% korting") : (loy.beloning || "beloning");
+                if (type === "korting") { const vol = bedragParse(d.totaalVol || d.totaal); if (vol > 0) eindTotaal = euro(vol * (1 - (loy.korting || 10) / 100)); }
+              } else if (d.totaalVol) { eindTotaal = String(d.totaalVol).slice(0, 40); }
+            }
+          } else if (d.gebruikBeloning && d.totaalVol) { eindTotaal = String(d.totaalVol).slice(0, 40); }
+        } else if (d.gebruikBeloning && d.totaalVol) { eindTotaal = String(d.totaalVol).slice(0, 40); }
       } catch (e) {}
     }
     let belBetaling = String(d.betaling || "").slice(0, 120);
@@ -150,7 +172,7 @@ export default {
     const pad = `bestellingen/${nu.slice(0, 10)}-${id}.json`;
     const ghOk = await putGitHub(env, pad, order, `Bestelling #${id} (${naam})`);
 
-    try { await putGitHub(env, `klant-tokens/${klanttoken}.json`, { telDigits, tel, naam, taal: order.taal || (tokenRec && tokenRec.taal) || "", beloningGebruikt: ((tokenRec && tokenRec.beloningGebruikt) || 0) + (order.beloning ? 1 : 0), aangemaakt: (tokenRec && tokenRec.aangemaakt) || nu }, "Klant-token"); } catch (e) {}
+    try { await putGitHub(env, `klant-tokens/${klanttoken}.json`, { telDigits, tel, naam, taal: order.taal || (tokenRec && tokenRec.taal) || "", beloningGebruikt: ((tokenRec && tokenRec.beloningGebruikt) || 0) + (order.beloning ? 1 : 0), belRechten: belRechten, aangemaakt: (tokenRec && tokenRec.aangemaakt) || nu }, "Klant-token"); } catch (e) {}
     // Telefoon->token-index, zodat beheer een klant een persoonlijke inloglink kan sturen
     let nieuweKlant = false;
     try { const idx = (await leesJson(env, "klant-token-index.json")) || {}; nieuweKlant = !idx[telDigits]; if (idx[telDigits] !== klanttoken) { idx[telDigits] = klanttoken; await putGitHub(env, "klant-token-index.json", idx, "token-index"); } } catch (e) {}
