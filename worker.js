@@ -307,7 +307,7 @@ async function appendGitHub(env, pad, entry, cap, bericht) {
 function orderBericht(o, nieuweKlant) {
   const kop = o.ingevroren ? "\u2744\uFE0F INGEVROREN \u2014 OP AFSPRAAK\n" : "";
   const kk = (nieuweKlant === true) ? "\uD83C\uDD95 NIEUWE KLANT!\n" : (nieuweKlant === false ? "\uD83D\uDD01 Terugkerende klant\n" : "");
-  const bel = o.beloning ? ("\uD83C\uDF81 SPAARKAART: geef " + o.beloning + " GRATIS\n") : "";
+  const bel = o.beloning ? ("\uD83C\uDF81 SPAARKAART: " + o.beloning + "\n") : "";
   return kop + kk + bel + `\uD83C\uDF38 Nieuwe bestelling #${o.order_id}\n${o.naam} — ${o.tel}\nAfhalen: ${o.afhaal}\n${o.bestelling}\nTotaal: ${o.totaal}\nBetaling: ${o.betaling}` + (o.opmerking ? `\nOpmerking: ${o.opmerking}` : "");
 }
 async function callMeBotConfig(env) {
