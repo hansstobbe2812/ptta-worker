@@ -108,31 +108,48 @@ export default {
       if (!okBot) return json({ ok: false, fout: "botcheck mislukt" }, 403, cors);
     }
 
+    // Klant-token bepalen (nodig voor spaarkaart-validatie + hergebruik)
+    let klanttoken = String(d.klanttoken || "").replace(/[^A-Za-z0-9]/g, "").slice(0, 48);
+    let tokenGeldig = false; let tokenRec = null;
+    if (klanttoken) { tokenRec = await leesJson(env, `klant-tokens/${klanttoken}.json`); if (tokenRec && tokenRec.telDigits === telDigits) tokenGeldig = true; }
+    if (!tokenGeldig) { klanttoken = nieuwToken(); tokenRec = null; }
+    // Spaarkaart-beloning SERVER-SIDE valideren (voorkomt hergebruik/misbruik van een volle kaart)
+    let belText = "", eindTotaal = String(d.totaal || "").slice(0, 40);
+    if (d.gebruikBeloning) {
+      try {
+        const loy = await loyConfig(env);
+        const type = (d.beloningType === "korting") ? "korting" : "gerecht";
+        const typeAan = (type === "korting") ? loy.kortingAan : loy.gerechtAan;
+        const best = tokenGeldig ? await ordersVoorTel(env, telDigits) : [];
+        const stempels = best.filter(o => bedragParse(o.totaal) >= (loy.min || 0)).length;
+        const beschikbaar = Math.floor(stempels / (loy.doel || 10)) - ((tokenRec && tokenRec.beloningGebruikt) || 0);
+        if (loy.aan && typeAan && beschikbaar >= 1) {
+          belText = (type === "korting") ? ((loy.korting || 10) + "% korting") : (loy.beloning || "beloning");
+          if (type === "korting") { const vol = bedragParse(d.totaalVol || d.totaal); if (vol > 0) eindTotaal = euro(vol * (1 - (loy.korting || 10) / 100)); }
+        } else if (d.totaalVol) { eindTotaal = String(d.totaalVol).slice(0, 40); }
+      } catch (e) {}
+    }
+    let belBetaling = String(d.betaling || "").slice(0, 120);
+    if (d.gebruikBeloning) { belBetaling = belBetaling.replace(/\(\u20ac[^)]*\)/, "(" + eindTotaal + ")"); }
     const id = (String(d.order_id || "").replace(/\D/g, "").slice(0, 8)) || String(Date.now()).slice(-6);
     const nu = new Date().toISOString();
     const order = {
       order_id: id, tijd: nu, naam, tel, bestelling,
-      totaal: String(d.totaal || "").slice(0, 40),
-      betaling: String(d.betaling || "").slice(0, 120),
+      totaal: eindTotaal,
+      betaling: belBetaling,
       opmerking: String(d.opmerking || "").slice(0, 1000),
       afhaal: String(d.afhaal || "").slice(0, 120),
       start: String(d.start || "").slice(0, 40),
       taal: String(d.taal || "").slice(0, 5),
       vid: String(d.vid || "").replace(/[^A-Za-z0-9]/g, "").slice(0, 64),
       mand: safeParse(d.mand),
-      beloning: d.gebruikBeloning ? String(d.beloning || "").slice(0, 80) : "",
+      beloning: belText,
       afgehaald: false, betaald: false,
     };
 
     const pad = `bestellingen/${nu.slice(0, 10)}-${id}.json`;
     const ghOk = await putGitHub(env, pad, order, `Bestelling #${id} (${naam})`);
 
-    // Persoonlijk klant-token (Mijn account via inloglink): hergebruik geldig bestaand, anders nieuw
-    let klanttoken = String(d.klanttoken || "").replace(/[^A-Za-z0-9]/g, "").slice(0, 48);
-    let tokenGeldig = false;
-    let tokenRec = null;
-    if (klanttoken) { tokenRec = await leesJson(env, `klant-tokens/${klanttoken}.json`); if (tokenRec && tokenRec.telDigits === telDigits) tokenGeldig = true; }
-    if (!tokenGeldig) { klanttoken = nieuwToken(); tokenRec = null; }
     try { await putGitHub(env, `klant-tokens/${klanttoken}.json`, { telDigits, tel, naam, taal: order.taal || (tokenRec && tokenRec.taal) || "", beloningGebruikt: ((tokenRec && tokenRec.beloningGebruikt) || 0) + (order.beloning ? 1 : 0), aangemaakt: (tokenRec && tokenRec.aangemaakt) || nu }, "Klant-token"); } catch (e) {}
     // Telefoon->token-index, zodat beheer een klant een persoonlijke inloglink kan sturen
     let nieuweKlant = false;
@@ -222,6 +239,9 @@ function nieuwToken() {
   const a = new Uint8Array(24); crypto.getRandomValues(a);
   let s = ""; for (const b of a) s += (b % 36).toString(36); return s.slice(0, 32);
 }
+function euro(n){ return "\u20ac " + (Math.round(Number(n)*100)/100).toFixed(2).replace(".", ","); }
+function bedragParse(s){ const m=String(s||"").replace(/[^0-9,.]/g,"").replace(/\.(?=\d{3}\b)/g,"").replace(",","."); const v=parseFloat(m); return isFinite(v)?v:0; }
+async function loyConfig(env){ const c=(await leesJson(env,"loyaliteit.json"))||{}; return { aan:!!c.aan, doel:c.doel||10, min:c.min||0, korting:c.korting||10, gerechtAan:(c.gerechtAan!==undefined)?!!c.gerechtAan:(c.type!=="korting"), kortingAan:(c.kortingAan!==undefined)?!!c.kortingAan:(c.type==="korting") }; }
 async function leesJson(env, pad) {
   const repo = env.GH_REPO, branch = env.GH_BRANCH || "main";
   if (!repo || !env.GH_TOKEN) return null;
