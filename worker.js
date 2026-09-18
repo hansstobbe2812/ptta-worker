@@ -59,7 +59,7 @@ export default {
       const rec = await leesJson(env, `klant-tokens/${token}.json`);
       if (!rec || !rec.telDigits) return json({ ok: false }, 200, cors);
       const orders = await ordersVoorTel(env, rec.telDigits);
-      return json({ ok: true, naam: rec.naam || "", tel: rec.tel || (orders[0] && orders[0].tel) || "", token, deelcode: token.slice(0, 8), aantal: orders.length, bestellingen: orders }, 200, cors);
+      return json({ ok: true, naam: rec.naam || "", tel: rec.tel || (orders[0] && orders[0].tel) || "", taal: rec.taal || "", token, deelcode: token.slice(0, 8), aantal: orders.length, bestellingen: orders }, 200, cors);
     }
 
     // --- Test-WhatsApp (alleen beheer: token moet toegang tot de repo hebben) ---
@@ -129,8 +129,10 @@ export default {
     // Persoonlijk klant-token (Mijn account via inloglink): hergebruik geldig bestaand, anders nieuw
     let klanttoken = String(d.klanttoken || "").replace(/[^A-Za-z0-9]/g, "").slice(0, 48);
     let tokenGeldig = false;
-    if (klanttoken) { const b = await leesJson(env, `klant-tokens/${klanttoken}.json`); if (b && b.telDigits === telDigits) tokenGeldig = true; }
-    if (!tokenGeldig) { klanttoken = nieuwToken(); try { await putGitHub(env, `klant-tokens/${klanttoken}.json`, { telDigits, tel, naam, aangemaakt: nu }, "Klant-token"); } catch (e) {} }
+    let tokenRec = null;
+    if (klanttoken) { tokenRec = await leesJson(env, `klant-tokens/${klanttoken}.json`); if (tokenRec && tokenRec.telDigits === telDigits) tokenGeldig = true; }
+    if (!tokenGeldig) { klanttoken = nieuwToken(); tokenRec = null; }
+    try { await putGitHub(env, `klant-tokens/${klanttoken}.json`, { telDigits, tel, naam, taal: order.taal || (tokenRec && tokenRec.taal) || "", aangemaakt: (tokenRec && tokenRec.aangemaakt) || nu }, "Klant-token"); } catch (e) {}
     // Telefoon->token-index, zodat beheer een klant een persoonlijke inloglink kan sturen
     let nieuweKlant = false;
     try { const idx = (await leesJson(env, "klant-token-index.json")) || {}; nieuweKlant = !idx[telDigits]; if (idx[telDigits] !== klanttoken) { idx[telDigits] = klanttoken; await putGitHub(env, "klant-token-index.json", idx, "token-index"); } } catch (e) {}
