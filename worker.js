@@ -61,21 +61,25 @@ export default {
       const orders = await ordersVoorTel(env, rec.telDigits);
       let belRechten = Array.isArray(rec.belRechten) ? rec.belRechten.slice() : [];
       let spaarLid = !!rec.spaarLid || belRechten.length > 0;
+      let kaartCap = (typeof rec.kaartCap === "number") ? rec.kaartCap : null;
       try {
         const loy = await loyConfig(env);
-        if (loy.aan) {
+        const loyActief = loy.aan || spaarLid;
+        if (loyActief) {
+          const doel = loy.doel || 10;
           const stempels = orders.filter(o => bedragParse(o.totaal) >= (loy.min || 0)).length;
-          const beschikbaar = Math.floor(stempels / (loy.doel || 10)) - (rec.beloningGebruikt || 0);
-          if (beschikbaar >= 1) {
-            spaarLid = true;
-            let ch = false;
-            if (loy.gerechtAan && belRechten.indexOf("gerecht") < 0) { belRechten.push("gerecht"); ch = true; }
-            if (loy.kortingAan && belRechten.indexOf("korting") < 0) { belRechten.push("korting"); ch = true; }
-            if (ch || !rec.spaarLid) { try { await putGitHub(env, `klant-tokens/${token}.json`, Object.assign({}, rec, { belRechten, spaarLid: true }), "Spaarlid + rechten vastgelegd"); } catch (e) {} }
+          if (loy.aan) {
+            kaartCap = null;
+            const beschikbaar = Math.floor(stempels / doel) - (rec.beloningGebruikt || 0);
+            if (beschikbaar >= 1) { spaarLid = true; if (loy.gerechtAan && belRechten.indexOf("gerecht") < 0) belRechten.push("gerecht"); if (loy.kortingAan && belRechten.indexOf("korting") < 0) belRechten.push("korting"); }
+          } else if (kaartCap === null) { kaartCap = Math.ceil(stempels / doel); }
+          const capOud = (typeof rec.kaartCap === "number") ? rec.kaartCap : null;
+          if ((belRechten.length !== (rec.belRechten || []).length) || ((!!rec.spaarLid) !== spaarLid) || (capOud !== kaartCap)) {
+            try { await putGitHub(env, `klant-tokens/${token}.json`, Object.assign({}, rec, { belRechten, spaarLid, kaartCap }), "Spaarstatus vastgelegd"); } catch (e) {}
           }
         }
       } catch (e) {}
-      return json({ ok: true, naam: rec.naam || "", tel: rec.tel || (orders[0] && orders[0].tel) || "", taal: rec.taal || "", beloningGebruikt: rec.beloningGebruikt || 0, belRechten, spaarLid, token, deelcode: token.slice(0, 8), aantal: orders.length, bestellingen: orders }, 200, cors);
+      return json({ ok: true, naam: rec.naam || "", tel: rec.tel || (orders[0] && orders[0].tel) || "", taal: rec.taal || "", beloningGebruikt: rec.beloningGebruikt || 0, belRechten, spaarLid, kaartCap, token, deelcode: token.slice(0, 8), aantal: orders.length, bestellingen: orders }, 200, cors);
     }
 
     // --- Test-WhatsApp (alleen beheer: token moet toegang tot de repo hebben) ---
@@ -133,15 +137,19 @@ export default {
     let belText = "", eindTotaal = String(d.totaal || "").slice(0, 40);
     let belRechten = (tokenRec && Array.isArray(tokenRec.belRechten)) ? tokenRec.belRechten.slice() : [];
     let spaarLid = !!(tokenRec && tokenRec.spaarLid);
+    let kaartCap = (tokenRec && typeof tokenRec.kaartCap === "number") ? tokenRec.kaartCap : null;
     if (d.gebruikBeloning || tokenGeldig) {
       try {
         const loy = await loyConfig(env);
         if (loy.aan && d.spaarOpt) spaarLid = true;
         const loyActief = loy.aan || spaarLid;
         if (loyActief && tokenGeldig) {
+          const doel = loy.doel || 10;
           const best = await ordersVoorTel(env, telDigits);
           const stempels = best.filter(o => bedragParse(o.totaal) >= (loy.min || 0)).length;
-          const beschikbaar = Math.floor(stempels / (loy.doel || 10)) - ((tokenRec && tokenRec.beloningGebruikt) || 0);
+          let verdiend = Math.floor(stempels / doel);
+          if (!loy.aan) { if (kaartCap === null) kaartCap = Math.ceil(stempels / doel); verdiend = Math.min(verdiend, kaartCap); } else { kaartCap = null; }
+          const beschikbaar = Math.max(0, verdiend - ((tokenRec && tokenRec.beloningGebruikt) || 0));
           if (beschikbaar >= 1) {
             if (loy.aan) {
               if (loy.gerechtAan && belRechten.indexOf("gerecht") < 0) belRechten.push("gerecht");
@@ -180,7 +188,7 @@ export default {
     const pad = `bestellingen/${nu.slice(0, 10)}-${id}.json`;
     const ghOk = await putGitHub(env, pad, order, `Bestelling #${id} (${naam})`);
 
-    try { await putGitHub(env, `klant-tokens/${klanttoken}.json`, { telDigits, tel, naam, taal: order.taal || (tokenRec && tokenRec.taal) || "", beloningGebruikt: ((tokenRec && tokenRec.beloningGebruikt) || 0) + (order.beloning ? 1 : 0), belRechten: belRechten, spaarLid: spaarLid, aangemaakt: (tokenRec && tokenRec.aangemaakt) || nu }, "Klant-token"); } catch (e) {}
+    try { await putGitHub(env, `klant-tokens/${klanttoken}.json`, { telDigits, tel, naam, taal: order.taal || (tokenRec && tokenRec.taal) || "", beloningGebruikt: ((tokenRec && tokenRec.beloningGebruikt) || 0) + (order.beloning ? 1 : 0), belRechten: belRechten, spaarLid: spaarLid, kaartCap: kaartCap, aangemaakt: (tokenRec && tokenRec.aangemaakt) || nu }, "Klant-token"); } catch (e) {}
     // Telefoon->token-index, zodat beheer een klant een persoonlijke inloglink kan sturen
     let nieuweKlant = false;
     try { const idx = (await leesJson(env, "klant-token-index.json")) || {}; nieuweKlant = !idx[telDigits]; if (idx[telDigits] !== klanttoken) { idx[telDigits] = klanttoken; await putGitHub(env, "klant-token-index.json", idx, "token-index"); } } catch (e) {}
