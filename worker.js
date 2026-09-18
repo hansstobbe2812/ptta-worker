@@ -59,7 +59,7 @@ export default {
       const rec = await leesJson(env, `klant-tokens/${token}.json`);
       if (!rec || !rec.telDigits) return json({ ok: false }, 200, cors);
       const orders = await ordersVoorTel(env, rec.telDigits);
-      return json({ ok: true, naam: rec.naam || "", tel: rec.tel || (orders[0] && orders[0].tel) || "", taal: rec.taal || "", token, deelcode: token.slice(0, 8), aantal: orders.length, bestellingen: orders }, 200, cors);
+      return json({ ok: true, naam: rec.naam || "", tel: rec.tel || (orders[0] && orders[0].tel) || "", taal: rec.taal || "", beloningGebruikt: rec.beloningGebruikt || 0, token, deelcode: token.slice(0, 8), aantal: orders.length, bestellingen: orders }, 200, cors);
     }
 
     // --- Test-WhatsApp (alleen beheer: token moet toegang tot de repo hebben) ---
@@ -120,6 +120,7 @@ export default {
       taal: String(d.taal || "").slice(0, 5),
       vid: String(d.vid || "").replace(/[^A-Za-z0-9]/g, "").slice(0, 64),
       mand: safeParse(d.mand),
+      beloning: d.gebruikBeloning ? String(d.beloning || "").slice(0, 80) : "",
       afgehaald: false, betaald: false,
     };
 
@@ -132,7 +133,7 @@ export default {
     let tokenRec = null;
     if (klanttoken) { tokenRec = await leesJson(env, `klant-tokens/${klanttoken}.json`); if (tokenRec && tokenRec.telDigits === telDigits) tokenGeldig = true; }
     if (!tokenGeldig) { klanttoken = nieuwToken(); tokenRec = null; }
-    try { await putGitHub(env, `klant-tokens/${klanttoken}.json`, { telDigits, tel, naam, taal: order.taal || (tokenRec && tokenRec.taal) || "", aangemaakt: (tokenRec && tokenRec.aangemaakt) || nu }, "Klant-token"); } catch (e) {}
+    try { await putGitHub(env, `klant-tokens/${klanttoken}.json`, { telDigits, tel, naam, taal: order.taal || (tokenRec && tokenRec.taal) || "", beloningGebruikt: ((tokenRec && tokenRec.beloningGebruikt) || 0) + (order.beloning ? 1 : 0), aangemaakt: (tokenRec && tokenRec.aangemaakt) || nu }, "Klant-token"); } catch (e) {}
     // Telefoon->token-index, zodat beheer een klant een persoonlijke inloglink kan sturen
     let nieuweKlant = false;
     try { const idx = (await leesJson(env, "klant-token-index.json")) || {}; nieuweKlant = !idx[telDigits]; if (idx[telDigits] !== klanttoken) { idx[telDigits] = klanttoken; await putGitHub(env, "klant-token-index.json", idx, "token-index"); } } catch (e) {}
@@ -245,7 +246,7 @@ async function ordersVoorTel(env, telDigits) {
         const rr = await fetch(`https://api.github.com/repos/${repo}/contents/${f.path}?ref=${branch}&t=${Date.now()}`, { headers });
         if (!rr.ok) continue;
         const o = JSON.parse(fromB64((await rr.json()).content));
-        if (String(o.tel || "").replace(/\D/g, "") === telDigits) uit.push({ order_id: o.order_id, tijd: o.tijd, bestelling: o.bestelling, totaal: o.totaal, afhaal: o.afhaal, afgehaald: !!o.afgehaald, tel: o.tel, mand: o.mand || null });
+        if (String(o.tel || "").replace(/\D/g, "") === telDigits) uit.push({ order_id: o.order_id, tijd: o.tijd, bestelling: o.bestelling, totaal: o.totaal, afhaal: o.afhaal, afgehaald: !!o.afgehaald, tel: o.tel, mand: o.mand || null, beloning: o.beloning || "" });
       } catch (e) {}
     }
     uit.sort((a, b) => String(b.tijd).localeCompare(String(a.tijd)));
@@ -306,7 +307,8 @@ async function appendGitHub(env, pad, entry, cap, bericht) {
 function orderBericht(o, nieuweKlant) {
   const kop = o.ingevroren ? "\u2744\uFE0F INGEVROREN \u2014 OP AFSPRAAK\n" : "";
   const kk = (nieuweKlant === true) ? "\uD83C\uDD95 NIEUWE KLANT!\n" : (nieuweKlant === false ? "\uD83D\uDD01 Terugkerende klant\n" : "");
-  return kop + kk + `\uD83C\uDF38 Nieuwe bestelling #${o.order_id}\n${o.naam} — ${o.tel}\nAfhalen: ${o.afhaal}\n${o.bestelling}\nTotaal: ${o.totaal}\nBetaling: ${o.betaling}` + (o.opmerking ? `\nOpmerking: ${o.opmerking}` : "");
+  const bel = o.beloning ? ("\uD83C\uDF81 SPAARKAART: geef " + o.beloning + " GRATIS\n") : "";
+  return kop + kk + bel + `\uD83C\uDF38 Nieuwe bestelling #${o.order_id}\n${o.naam} — ${o.tel}\nAfhalen: ${o.afhaal}\n${o.bestelling}\nTotaal: ${o.totaal}\nBetaling: ${o.betaling}` + (o.opmerking ? `\nOpmerking: ${o.opmerking}` : "");
 }
 async function callMeBotConfig(env) {
   // Beheer kan dit instellen via callmebot.json in de repo; anders de secrets (CB_PHONE/CB_APIKEY).
