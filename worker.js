@@ -245,7 +245,7 @@ async function ordersVoorTel(env, telDigits) {
         const rr = await fetch(`https://api.github.com/repos/${repo}/contents/${f.path}?ref=${branch}&t=${Date.now()}`, { headers });
         if (!rr.ok) continue;
         const o = JSON.parse(fromB64((await rr.json()).content));
-        if (String(o.tel || "").replace(/\D/g, "") === telDigits) uit.push({ order_id: o.order_id, tijd: o.tijd, bestelling: o.bestelling, totaal: o.totaal, afhaal: o.afhaal, afgehaald: !!o.afgehaald, tel: o.tel });
+        if (String(o.tel || "").replace(/\D/g, "") === telDigits) uit.push({ order_id: o.order_id, tijd: o.tijd, bestelling: o.bestelling, totaal: o.totaal, afhaal: o.afhaal, afgehaald: !!o.afgehaald, tel: o.tel, mand: o.mand || null });
       } catch (e) {}
     }
     uit.sort((a, b) => String(b.tijd).localeCompare(String(a.tijd)));
