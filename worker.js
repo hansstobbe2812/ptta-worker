@@ -53,6 +53,18 @@ export default {
     }
 
     // --- Mijn account: bestellingen van een klant opzoeken via persoonlijke token ---
+    if (d && d.soort === "verwijder") {
+      const token = String(d.token || "").replace(/[^A-Za-z0-9]/g, "").slice(0, 48);
+      if (!token) return json({ ok: false, fout: "token" }, 400, cors);
+      const rec = await leesJson(env, `klant-tokens/${token}.json`);
+      const telD = rec ? String(rec.telDigits || "").replace(/\D/g, "") : "";
+      try { await deleteGitHub(env, `klant-tokens/${token}.json`); } catch (e) {}
+      if (telD) {
+        try { let lijst = await leesJson(env, "klanten.json"); if (Array.isArray(lijst)) { const nieuw = lijst.filter(k => String(k.tel || "").replace(/\D/g, "") !== telD); if (nieuw.length !== lijst.length) await putGitHub(env, "klanten.json", nieuw, "Klant verwijderd (AVG)"); } } catch (e) {}
+        try { await anonimiseerOrders(env, telD); } catch (e) {}
+      }
+      return json({ ok: true }, 200, cors);
+    }
     if (d && d.soort === "profiel") {
       const token = String(d.token || "").replace(/[^A-Za-z0-9]/g, "").slice(0, 48);
       if (!token) return json({ ok: false, fout: "token" }, 400, cors);
@@ -333,6 +345,34 @@ async function leesJson(env, pad) {
     if (!r.ok) return null;
     return JSON.parse(fromB64((await r.json()).content));
   } catch (e) { return null; }
+}
+async function deleteGitHub(env, pad) {
+  const repo = env.GH_REPO, branch = env.GH_BRANCH || "main";
+  if (!repo || !env.GH_TOKEN) return false;
+  const url = `https://api.github.com/repos/${repo}/contents/${encodeURIComponent(pad).replace(/%2F/g, "/")}`;
+  const headers = { "Authorization": `Bearer ${env.GH_TOKEN}`, "Accept": "application/vnd.github+json", "User-Agent": "ptta-worker", "Content-Type": "application/json" };
+  let sha;
+  try { const g = await fetch(url + `?ref=${branch}`, { headers }); if (g.ok) sha = (await g.json()).sha; } catch (e) {}
+  if (!sha) return false;
+  try { const r = await fetch(url, { method: "DELETE", headers, body: JSON.stringify({ message: "Verwijderd (AVG)", sha, branch }) }); return r.ok; } catch (e) { return false; }
+}
+async function anonimiseerOrders(env, telD) {
+  const repo = env.GH_REPO, branch = env.GH_BRANCH || "main";
+  if (!repo || !env.GH_TOKEN || !telD) return;
+  const headers = { "Authorization": `Bearer ${env.GH_TOKEN}`, "Accept": "application/vnd.github+json", "User-Agent": "ptta-worker" };
+  try {
+    const l = await fetch(`https://api.github.com/repos/${repo}/contents/bestellingen?ref=${branch}&t=${Date.now()}`, { headers });
+    if (!l.ok) return;
+    const files = (await l.json()).filter(f => f.name && f.name.endsWith(".json"));
+    for (const f of files) {
+      try {
+        const rr = await fetch(`https://api.github.com/repos/${repo}/contents/${f.path}?ref=${branch}&t=${Date.now()}`, { headers });
+        if (!rr.ok) continue;
+        const o = JSON.parse(fromB64((await rr.json()).content));
+        if (String(o.tel || "").replace(/\D/g, "") === telD) { o.naam = ""; o.tel = ""; o.email = ""; o.straat = ""; o.postcode = ""; o.plaats = ""; o.allergie = ""; await putGitHub(env, f.path, o, "Order geanonimiseerd (AVG)"); }
+      } catch (e) {}
+    }
+  } catch (e) {}
 }
 async function herKeyOrders(env, oudTelD, nieuwTel, naam) {
   const repo = env.GH_REPO, branch = env.GH_BRANCH || "main";
