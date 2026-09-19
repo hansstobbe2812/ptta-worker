@@ -59,6 +59,7 @@ export default {
       const rec = await leesJson(env, `klant-tokens/${token}.json`);
       if (!rec || !rec.telDigits) return json({ ok: false }, 200, cors);
       const orders = await ordersVoorTel(env, rec.telDigits);
+      const puntBonus = await klantBonus(env, rec.telDigits);
       let belRechten = Array.isArray(rec.belRechten) ? rec.belRechten.slice() : [];
       let spaarLid = !!rec.spaarLid || belRechten.length > 0;
       let kaartCap = (typeof rec.kaartCap === "number") ? rec.kaartCap : null;
@@ -67,7 +68,7 @@ export default {
         const loyActief = loy.aan || spaarLid;
         if (loyActief) {
           const doel = loy.doel || 10;
-          const stempels = orders.filter(o => bedragParse(o.totaal) >= (loy.min || 0)).length;
+          const stempels = orders.filter(o => bedragParse(o.totaal) >= (loy.min || 0)).length + puntBonus;
           if (loy.aan) {
             kaartCap = null;
             if (d.spaarOptIn) spaarLid = true;   // klant activeert sparen -> lid (blijft geldig als beheer later uitzet)
@@ -80,7 +81,7 @@ export default {
           }
         }
       } catch (e) {}
-      return json({ ok: true, naam: rec.naam || "", tel: rec.tel || (orders[0] && orders[0].tel) || "", taal: rec.taal || "", beloningGebruikt: rec.beloningGebruikt || 0, belRechten, spaarLid, kaartCap, token, deelcode: token.slice(0, 8), aantal: orders.length, bestellingen: orders }, 200, cors);
+      return json({ ok: true, naam: rec.naam || "", tel: rec.tel || (orders[0] && orders[0].tel) || "", taal: rec.taal || "", beloningGebruikt: rec.beloningGebruikt || 0, puntenBonus: puntBonus, belRechten, spaarLid, kaartCap, token, deelcode: token.slice(0, 8), aantal: orders.length, bestellingen: orders }, 200, cors);
     }
 
     // --- Test-WhatsApp (alleen beheer: token moet toegang tot de repo hebben) ---
@@ -147,7 +148,8 @@ export default {
         if (loyActief && tokenGeldig) {
           const doel = loy.doel || 10;
           const best = await ordersVoorTel(env, telDigits);
-          const stempels = best.filter(o => bedragParse(o.totaal) >= (loy.min || 0)).length;
+          const puntBonus = await klantBonus(env, telDigits);
+          const stempels = best.filter(o => bedragParse(o.totaal) >= (loy.min || 0)).length + puntBonus;
           let verdiend = Math.floor(stempels / doel);
           if (!loy.aan) { if (kaartCap === null || kaartCap < 1) kaartCap = Math.max(1, Math.ceil(stempels / doel)); verdiend = Math.min(verdiend, kaartCap); } else { kaartCap = null; }
           const beschikbaar = Math.max(0, verdiend - ((tokenRec && tokenRec.beloningGebruikt) || 0));
@@ -281,6 +283,7 @@ function nieuwToken() {
 function euro(n){ return "\u20ac " + (Math.round(Number(n)*100)/100).toFixed(2).replace(".", ","); }
 function bedragParse(s){ const m=String(s||"").replace(/[^0-9,.]/g,"").replace(/\.(?=\d{3}\b)/g,"").replace(",","."); const v=parseFloat(m); return isFinite(v)?v:0; }
 async function loyConfig(env){ const c=(await leesJson(env,"loyaliteit.json"))||{}; return { aan:!!c.aan, doel:c.doel||10, min:c.min||0, korting:c.korting||10, gerechtAan:(c.gerechtAan!==undefined)?!!c.gerechtAan:(c.type!=="korting"), kortingAan:(c.kortingAan!==undefined)?!!c.kortingAan:(c.type==="korting") }; }
+async function klantBonus(env, telDigits){ try{ const kl=await leesJson(env,"klanten.json"); if(Array.isArray(kl)){ const t=String(telDigits||"").replace(/\D/g,""); const k=kl.find(function(x){ return String(x.tel||"").replace(/\D/g,"")===t; }); if(k && typeof k.puntenBonus==="number" && isFinite(k.puntenBonus)) return Math.round(k.puntenBonus); } }catch(e){} return 0; }
 async function leesJson(env, pad) {
   const repo = env.GH_REPO, branch = env.GH_BRANCH || "main";
   if (!repo || !env.GH_TOKEN) return null;
