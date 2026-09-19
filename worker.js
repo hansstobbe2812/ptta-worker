@@ -53,6 +53,23 @@ export default {
     }
 
     // --- Mijn account: bestellingen van een klant opzoeken via persoonlijke token ---
+    if (d && d.soort === "profiel") {
+      const token = String(d.token || "").replace(/[^A-Za-z0-9]/g, "").slice(0, 48);
+      if (!token) return json({ ok: false, fout: "token" }, 400, cors);
+      const rec = await leesJson(env, `klant-tokens/${token}.json`);
+      if (!rec || !rec.telDigits) return json({ ok: false, fout: "onbekend" }, 404, cors);
+      const naam = String(d.naam || "").slice(0, 80).trim();
+      const email = String(d.email || "").slice(0, 120).trim();
+      const nieuwTel = String(d.tel || "").slice(0, 40).trim();
+      const nieuwTelD = nieuwTel.replace(/\D/g, "");
+      const oudTelD = String(rec.telDigits || "").replace(/\D/g, "");
+      const telGewijzigd = !!(nieuwTelD && nieuwTelD !== oudTelD);
+      const nieuw = Object.assign({}, rec, { naam: naam || rec.naam || "", email: email });
+      if (telGewijzigd) { nieuw.telDigits = nieuwTelD; nieuw.tel = nieuwTel; }
+      await putGitHub(env, `klant-tokens/${token}.json`, nieuw, "Profiel bijgewerkt (klant)");
+      if (telGewijzigd) { try { await herKeyOrders(env, oudTelD, nieuwTel, naam); } catch (e) {} }
+      return json({ ok: true, naam: nieuw.naam, tel: nieuw.tel || rec.tel || "", email: email, telGewijzigd: telGewijzigd }, 200, cors);
+    }
     if (d && d.soort === "account") {
       const token = String(d.token || "").replace(/[^A-Za-z0-9]/g, "").slice(0, 48);
       if (!token) return json({ ok: false }, 200, cors);
@@ -81,7 +98,7 @@ export default {
           }
         }
       } catch (e) {}
-      return json({ ok: true, naam: rec.naam || "", tel: rec.tel || (orders[0] && orders[0].tel) || "", taal: rec.taal || "", beloningGebruikt: rec.beloningGebruikt || 0, puntenBonus: puntBonus, belRechten, spaarLid, kaartCap, token, deelcode: token.slice(0, 8), aantal: orders.length, bestellingen: orders }, 200, cors);
+      return json({ ok: true, naam: rec.naam || "", tel: rec.tel || (orders[0] && orders[0].tel) || "", email: rec.email || "", taal: rec.taal || "", beloningGebruikt: rec.beloningGebruikt || 0, puntenBonus: puntBonus, belRechten, spaarLid, kaartCap, token, deelcode: token.slice(0, 8), aantal: orders.length, bestellingen: orders }, 200, cors);
     }
 
     // --- Test-WhatsApp (alleen beheer: token moet toegang tot de repo hebben) ---
@@ -293,6 +310,24 @@ async function leesJson(env, pad) {
     if (!r.ok) return null;
     return JSON.parse(fromB64((await r.json()).content));
   } catch (e) { return null; }
+}
+async function herKeyOrders(env, oudTelD, nieuwTel, naam) {
+  const repo = env.GH_REPO, branch = env.GH_BRANCH || "main";
+  if (!repo || !env.GH_TOKEN || !oudTelD) return;
+  const headers = { "Authorization": `Bearer ${env.GH_TOKEN}`, "Accept": "application/vnd.github+json", "User-Agent": "ptta-worker" };
+  try {
+    const l = await fetch(`https://api.github.com/repos/${repo}/contents/bestellingen?ref=${branch}&t=${Date.now()}`, { headers });
+    if (!l.ok) return;
+    const files = (await l.json()).filter(f => f.name && f.name.endsWith(".json"));
+    for (const f of files) {
+      try {
+        const rr = await fetch(`https://api.github.com/repos/${repo}/contents/${f.path}?ref=${branch}&t=${Date.now()}`, { headers });
+        if (!rr.ok) continue;
+        const o = JSON.parse(fromB64((await rr.json()).content));
+        if (String(o.tel || "").replace(/\D/g, "") === oudTelD) { o.tel = nieuwTel; if (naam) o.naam = naam; await putGitHub(env, f.path, o, "Order her-sleutelen (profiel)"); }
+      } catch (e) {}
+    }
+  } catch (e) {}
 }
 async function ordersVoorTel(env, telDigits) {
   const repo = env.GH_REPO, branch = env.GH_BRANCH || "main";
