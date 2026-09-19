@@ -68,13 +68,15 @@ export default {
       const postcode = String(d.postcode || "").slice(0, 20).trim();
       const plaats = String(d.plaats || "").slice(0, 80).trim();
       const pittig = (d.pittig === "" || d.pittig === null || d.pittig === undefined) ? null : Math.max(0, Math.min(4, parseInt(d.pittig, 10) || 0));
-      const nieuw = Object.assign({}, rec, { naam: naam || rec.naam || "", email: email, straat: straat, postcode: postcode, plaats: plaats });
+      const allergie = String(d.allergie || "").slice(0, 200).trim();
+      const variant = (d.variant === "kip" || d.variant === "garnaal") ? d.variant : "";
+      const nieuw = Object.assign({}, rec, { naam: naam || rec.naam || "", email: email, straat: straat, postcode: postcode, plaats: plaats, allergie: allergie, variant: variant });
       if (pittig !== null) nieuw.pittig = pittig; else delete nieuw.pittig;
       if (telGewijzigd) { nieuw.telDigits = nieuwTelD; nieuw.tel = nieuwTel; }
       await putGitHub(env, `klant-tokens/${token}.json`, nieuw, "Profiel bijgewerkt (klant)");
       if (telGewijzigd) { try { await herKeyOrders(env, oudTelD, nieuwTel, naam); } catch (e) {} }
-      try { await updateKlantJson(env, oudTelD || nieuwTelD, { naam: nieuw.naam, email: email, straat: straat, postcode: postcode, plaats: plaats, pittig: (pittig !== null ? pittig : undefined), tel: (telGewijzigd ? nieuwTel : undefined) }); } catch (e) {}
-      return json({ ok: true, naam: nieuw.naam, tel: nieuw.tel || rec.tel || "", email: email, straat: straat, postcode: postcode, plaats: plaats, pittig: (typeof nieuw.pittig === "number") ? nieuw.pittig : null, telGewijzigd: telGewijzigd }, 200, cors);
+      try { await updateKlantJson(env, oudTelD || nieuwTelD, { naam: nieuw.naam, email: email, straat: straat, postcode: postcode, plaats: plaats, allergie: allergie, variant: variant, pittig: (pittig !== null ? pittig : undefined), tel: (telGewijzigd ? nieuwTel : undefined) }); } catch (e) {}
+      return json({ ok: true, naam: nieuw.naam, tel: nieuw.tel || rec.tel || "", email: email, straat: straat, postcode: postcode, plaats: plaats, allergie: allergie, variant: variant, pittig: (typeof nieuw.pittig === "number") ? nieuw.pittig : null, telGewijzigd: telGewijzigd }, 200, cors);
     }
     if (d && d.soort === "account") {
       const token = String(d.token || "").replace(/[^A-Za-z0-9]/g, "").slice(0, 48);
@@ -104,7 +106,7 @@ export default {
           }
         }
       } catch (e) {}
-      return json({ ok: true, naam: rec.naam || "", tel: rec.tel || (orders[0] && orders[0].tel) || "", email: rec.email || "", straat: rec.straat || "", postcode: rec.postcode || "", plaats: rec.plaats || "", pittig: (typeof rec.pittig === "number") ? rec.pittig : null, taal: rec.taal || "", beloningGebruikt: rec.beloningGebruikt || 0, puntenBonus: puntBonus, belRechten, spaarLid, kaartCap, token, deelcode: token.slice(0, 8), aantal: orders.length, bestellingen: orders }, 200, cors);
+      return json({ ok: true, naam: rec.naam || "", tel: rec.tel || (orders[0] && orders[0].tel) || "", email: rec.email || "", straat: rec.straat || "", postcode: rec.postcode || "", plaats: rec.plaats || "", allergie: rec.allergie || "", variant: rec.variant || "", pittig: (typeof rec.pittig === "number") ? rec.pittig : null, taal: rec.taal || "", beloningGebruikt: rec.beloningGebruikt || 0, puntenBonus: puntBonus, belRechten, spaarLid, kaartCap, token, deelcode: token.slice(0, 8), aantal: orders.length, bestellingen: orders }, 200, cors);
     }
 
     // --- Test-WhatsApp (alleen beheer: token moet toegang tot de repo hebben) ---
@@ -144,6 +146,7 @@ export default {
     const straat = String(d.straat || "").slice(0, 120).trim();
     const postcode = String(d.postcode || "").slice(0, 20).trim();
     const plaats = String(d.plaats || "").slice(0, 80).trim();
+    const allergie = String(d.allergie || "").slice(0, 200).trim();
     const tel = String(d.tel || "").slice(0, 30).trim();
     const bestelling = String(d.bestelling || "").slice(0, 4000);
     const telDigits = tel.replace(/\D/g, "");
@@ -202,7 +205,7 @@ export default {
     const id = (String(d.order_id || "").replace(/\D/g, "").slice(0, 8)) || String(Date.now()).slice(-6);
     const nu = new Date().toISOString();
     const order = {
-      order_id: id, tijd: nu, naam, tel, email, straat, postcode, plaats, bestelling,
+      order_id: id, tijd: nu, naam, tel, email, straat, postcode, plaats, allergie, bestelling,
       totaal: eindTotaal,
       betaling: belBetaling,
       opmerking: String(d.opmerking || "").slice(0, 1000),
@@ -218,8 +221,8 @@ export default {
     const pad = `bestellingen/${nu.slice(0, 10)}-${id}.json`;
     const ghOk = await putGitHub(env, pad, order, `Bestelling #${id} (${naam})`);
 
-    try { const _tk = Object.assign({}, tokenRec || {}, { telDigits, tel, naam, taal: order.taal || (tokenRec && tokenRec.taal) || "", beloningGebruikt: ((tokenRec && tokenRec.beloningGebruikt) || 0) + (order.beloning ? 1 : 0), belRechten: belRechten, spaarLid: spaarLid, kaartCap: kaartCap, aangemaakt: (tokenRec && tokenRec.aangemaakt) || nu }); if (email) _tk.email = email; if (straat) _tk.straat = straat; if (postcode) _tk.postcode = postcode; if (plaats) _tk.plaats = plaats; await putGitHub(env, `klant-tokens/${klanttoken}.json`, _tk, "Klant-token"); } catch (e) {}
-    if (straat || postcode || plaats || email) { try { await updateKlantJson(env, telDigits, { naam: naam, tel: tel, email: email || undefined, straat: straat || undefined, postcode: postcode || undefined, plaats: plaats || undefined }); } catch (e) {} }
+    try { const _tk = Object.assign({}, tokenRec || {}, { telDigits, tel, naam, taal: order.taal || (tokenRec && tokenRec.taal) || "", beloningGebruikt: ((tokenRec && tokenRec.beloningGebruikt) || 0) + (order.beloning ? 1 : 0), belRechten: belRechten, spaarLid: spaarLid, kaartCap: kaartCap, aangemaakt: (tokenRec && tokenRec.aangemaakt) || nu }); if (email) _tk.email = email; if (straat) _tk.straat = straat; if (postcode) _tk.postcode = postcode; if (plaats) _tk.plaats = plaats; if (allergie) _tk.allergie = allergie; await putGitHub(env, `klant-tokens/${klanttoken}.json`, _tk, "Klant-token"); } catch (e) {}
+    if (straat || postcode || plaats || email || allergie) { try { await updateKlantJson(env, telDigits, { naam: naam, tel: tel, email: email || undefined, straat: straat || undefined, postcode: postcode || undefined, plaats: plaats || undefined, allergie: allergie || undefined }); } catch (e) {} }
     // Telefoon->token-index, zodat beheer een klant een persoonlijke inloglink kan sturen
     let nieuweKlant = false;
     try { const idx = (await leesJson(env, "klant-token-index.json")) || {}; nieuweKlant = !idx[telDigits]; if (idx[telDigits] !== klanttoken) { idx[telDigits] = klanttoken; await putGitHub(env, "klant-token-index.json", idx, "token-index"); } } catch (e) {}
@@ -364,7 +367,7 @@ async function ordersVoorTel(env, telDigits) {
         const rr = await fetch(`https://api.github.com/repos/${repo}/contents/${f.path}?ref=${branch}&t=${Date.now()}`, { headers });
         if (!rr.ok) continue;
         const o = JSON.parse(fromB64((await rr.json()).content));
-        if (String(o.tel || "").replace(/\D/g, "") === telDigits) uit.push({ order_id: o.order_id, tijd: o.tijd, bestelling: o.bestelling, totaal: o.totaal, afhaal: o.afhaal, afgehaald: !!o.afgehaald, tel: o.tel, email: o.email || "", mand: o.mand || null, beloning: o.beloning || "" });
+        if (String(o.tel || "").replace(/\D/g, "") === telDigits) uit.push({ order_id: o.order_id, tijd: o.tijd, bestelling: o.bestelling, totaal: o.totaal, afhaal: o.afhaal, afgehaald: !!o.afgehaald, tel: o.tel, email: o.email || "", allergie: o.allergie || "", mand: o.mand || null, beloning: o.beloning || "" });
       } catch (e) {}
     }
     uit.sort((a, b) => String(b.tijd).localeCompare(String(a.tijd)));
@@ -426,7 +429,8 @@ function orderBericht(o, nieuweKlant) {
   const kop = o.ingevroren ? "\u2744\uFE0F INGEVROREN \u2014 OP AFSPRAAK\n" : "";
   const kk = (nieuweKlant === true) ? "\uD83C\uDD95 NIEUWE KLANT!\n" : (nieuweKlant === false ? "\uD83D\uDD01 Terugkerende klant\n" : "");
   const bel = o.beloning ? ("\uD83C\uDF81 SPAARKAART: " + o.beloning + "\n") : "";
-  return kop + kk + bel + `\uD83C\uDF38 Nieuwe bestelling #${o.order_id}\n${o.naam} — ${o.tel}\nAfhalen: ${o.afhaal}\n${o.bestelling}\nTotaal: ${o.totaal}\nBetaling: ${o.betaling}` + (o.opmerking ? `\nOpmerking: ${o.opmerking}` : "");
+  const alg = o.allergie ? ("\u26A0\uFE0F ALLERGIE/DIEET: " + o.allergie + "\n") : "";
+  return kop + kk + bel + alg + `\uD83C\uDF38 Nieuwe bestelling #${o.order_id}\n${o.naam} — ${o.tel}\nAfhalen: ${o.afhaal}\n${o.bestelling}\nTotaal: ${o.totaal}\nBetaling: ${o.betaling}` + (o.opmerking ? `\nOpmerking: ${o.opmerking}` : "");
 }
 async function callMeBotConfig(env) {
   // Beheer kan dit instellen via callmebot.json in de repo; anders de secrets (CB_PHONE/CB_APIKEY).
