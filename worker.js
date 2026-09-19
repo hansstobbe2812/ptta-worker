@@ -137,6 +137,21 @@ export default {
       return json({ ok: true }, 200, cors);
     }
 
+    // --- Melding: bestellen weer geopend (alleen beheer) ---
+    if (d && d.soort === "open-melding") {
+      const tok = String(d.token || "");
+      if (!tok) return json({ ok: false, fout: "geen token" }, 200, cors);
+      let mag = false;
+      try {
+        const r = await fetch(`https://api.github.com/repos/${env.GH_REPO}`, { headers: { "Authorization": `Bearer ${tok}`, "User-Agent": "ptta-worker", "Accept": "application/vnd.github+json" } });
+        mag = r.ok;
+      } catch (e) {}
+      if (!mag) return json({ ok: false, fout: "geen toegang" }, 200, cors);
+      const cfg = await callMeBotConfig(env);
+      if (cfg.phone && cfg.apikey) { const naam = String(d.naam || "").slice(0, 60).trim(); try { await sendWhatsApp(env, "\uD83D\uDFE2 Bestellen is weer GEOPEND bij Pink Thai TakeAway" + (naam ? " (door " + naam + ")" : "")); } catch (e) {} }
+      return json({ ok: true }, 200, cors);
+    }
+
     // --- Huidige CallMeBot-instelling teruggeven (alleen beheer) ---
     if (d && d.soort === "callmebot-status") {
       const tok = String(d.token || "");
