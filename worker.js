@@ -73,6 +73,7 @@ export default {
       if (telGewijzigd) { nieuw.telDigits = nieuwTelD; nieuw.tel = nieuwTel; }
       await putGitHub(env, `klant-tokens/${token}.json`, nieuw, "Profiel bijgewerkt (klant)");
       if (telGewijzigd) { try { await herKeyOrders(env, oudTelD, nieuwTel, naam); } catch (e) {} }
+      try { await updateKlantJson(env, oudTelD || nieuwTelD, { naam: nieuw.naam, email: email, straat: straat, postcode: postcode, plaats: plaats, pittig: (pittig !== null ? pittig : undefined), tel: (telGewijzigd ? nieuwTel : undefined) }); } catch (e) {}
       return json({ ok: true, naam: nieuw.naam, tel: nieuw.tel || rec.tel || "", email: email, straat: straat, postcode: postcode, plaats: plaats, pittig: (typeof nieuw.pittig === "number") ? nieuw.pittig : null, telGewijzigd: telGewijzigd }, 200, cors);
     }
     if (d && d.soort === "account") {
@@ -306,6 +307,16 @@ function nieuwToken() {
 function euro(n){ return "\u20ac " + (Math.round(Number(n)*100)/100).toFixed(2).replace(".", ","); }
 function bedragParse(s){ const m=String(s||"").replace(/[^0-9,.]/g,"").replace(/\.(?=\d{3}\b)/g,"").replace(",","."); const v=parseFloat(m); return isFinite(v)?v:0; }
 async function loyConfig(env){ const c=(await leesJson(env,"loyaliteit.json"))||{}; return { aan:!!c.aan, doel:c.doel||10, min:c.min||0, korting:c.korting||10, gerechtAan:(c.gerechtAan!==undefined)?!!c.gerechtAan:(c.type!=="korting"), kortingAan:(c.kortingAan!==undefined)?!!c.kortingAan:(c.type==="korting") }; }
+async function updateKlantJson(env, telDigits, fields){
+  try{
+    let lijst = await leesJson(env, "klanten.json"); if(!Array.isArray(lijst)) lijst=[];
+    const t=String(telDigits||"").replace(/\D/g,""); let found=false;
+    const clean={}; for(const k in fields){ if(fields[k]!==undefined && fields[k]!==null) clean[k]=fields[k]; }
+    lijst.forEach(function(k){ if(t && String(k.tel||"").replace(/\D/g,"")===t){ Object.assign(k, clean); found=true; } });
+    if(!found) lijst.unshift(Object.assign({tel:"", uitgenodigd:0}, clean));
+    await putGitHub(env, "klanten.json", lijst, "Klantprofiel bijgewerkt (klant)");
+  }catch(e){}
+}
 async function klantBonus(env, telDigits){ try{ const kl=await leesJson(env,"klanten.json"); if(Array.isArray(kl)){ const t=String(telDigits||"").replace(/\D/g,""); const k=kl.find(function(x){ return String(x.tel||"").replace(/\D/g,"")===t; }); if(k && typeof k.puntenBonus==="number" && isFinite(k.puntenBonus)) return Math.round(k.puntenBonus); } }catch(e){} return 0; }
 async function leesJson(env, pad) {
   const repo = env.GH_REPO, branch = env.GH_BRANCH || "main";
