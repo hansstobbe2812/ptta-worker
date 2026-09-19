@@ -73,7 +73,7 @@ export default {
             if (d.spaarOptIn) spaarLid = true;   // klant activeert sparen -> lid (blijft geldig als beheer later uitzet)
             const beschikbaar = Math.floor(stempels / doel) - (rec.beloningGebruikt || 0);
             if (beschikbaar >= 1) { spaarLid = true; if (loy.gerechtAan && belRechten.indexOf("gerecht") < 0) belRechten.push("gerecht"); if (loy.kortingAan && belRechten.indexOf("korting") < 0) belRechten.push("korting"); }
-          } else if (kaartCap === null) { kaartCap = Math.ceil(stempels / doel); }
+          } else if (kaartCap === null || kaartCap < 1) { kaartCap = Math.max(1, Math.ceil(stempels / doel)); }
           const capOud = (typeof rec.kaartCap === "number") ? rec.kaartCap : null;
           if ((belRechten.length !== (rec.belRechten || []).length) || ((!!rec.spaarLid) !== spaarLid) || (capOud !== kaartCap)) {
             try { await putGitHub(env, `klant-tokens/${token}.json`, Object.assign({}, rec, { belRechten, spaarLid, kaartCap }), "Spaarstatus vastgelegd"); } catch (e) {}
@@ -149,7 +149,7 @@ export default {
           const best = await ordersVoorTel(env, telDigits);
           const stempels = best.filter(o => bedragParse(o.totaal) >= (loy.min || 0)).length;
           let verdiend = Math.floor(stempels / doel);
-          if (!loy.aan) { if (kaartCap === null) kaartCap = Math.ceil(stempels / doel); verdiend = Math.min(verdiend, kaartCap); } else { kaartCap = null; }
+          if (!loy.aan) { if (kaartCap === null || kaartCap < 1) kaartCap = Math.max(1, Math.ceil(stempels / doel)); verdiend = Math.min(verdiend, kaartCap); } else { kaartCap = null; }
           const beschikbaar = Math.max(0, verdiend - ((tokenRec && tokenRec.beloningGebruikt) || 0));
           if (beschikbaar >= 1) {
             if (loy.aan) {
