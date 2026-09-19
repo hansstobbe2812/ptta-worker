@@ -70,6 +70,7 @@ export default {
           const stempels = orders.filter(o => bedragParse(o.totaal) >= (loy.min || 0)).length;
           if (loy.aan) {
             kaartCap = null;
+            if (d.spaarOptIn) spaarLid = true;   // klant activeert sparen -> lid (blijft geldig als beheer later uitzet)
             const beschikbaar = Math.floor(stempels / doel) - (rec.beloningGebruikt || 0);
             if (beschikbaar >= 1) { spaarLid = true; if (loy.gerechtAan && belRechten.indexOf("gerecht") < 0) belRechten.push("gerecht"); if (loy.kortingAan && belRechten.indexOf("korting") < 0) belRechten.push("korting"); }
           } else if (kaartCap === null) { kaartCap = Math.ceil(stempels / doel); }
