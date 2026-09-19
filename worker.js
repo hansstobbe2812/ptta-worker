@@ -117,6 +117,7 @@ export default {
     }
 
     const naam = String(d.naam || "").slice(0, 80).trim();
+    const email = String(d.email || "").slice(0, 120).trim();
     const tel = String(d.tel || "").slice(0, 30).trim();
     const bestelling = String(d.bestelling || "").slice(0, 4000);
     const telDigits = tel.replace(/\D/g, "");
@@ -175,7 +176,7 @@ export default {
     const id = (String(d.order_id || "").replace(/\D/g, "").slice(0, 8)) || String(Date.now()).slice(-6);
     const nu = new Date().toISOString();
     const order = {
-      order_id: id, tijd: nu, naam, tel, bestelling,
+      order_id: id, tijd: nu, naam, tel, email, bestelling,
       totaal: eindTotaal,
       betaling: belBetaling,
       opmerking: String(d.opmerking || "").slice(0, 1000),
@@ -308,7 +309,7 @@ async function ordersVoorTel(env, telDigits) {
         const rr = await fetch(`https://api.github.com/repos/${repo}/contents/${f.path}?ref=${branch}&t=${Date.now()}`, { headers });
         if (!rr.ok) continue;
         const o = JSON.parse(fromB64((await rr.json()).content));
-        if (String(o.tel || "").replace(/\D/g, "") === telDigits) uit.push({ order_id: o.order_id, tijd: o.tijd, bestelling: o.bestelling, totaal: o.totaal, afhaal: o.afhaal, afgehaald: !!o.afgehaald, tel: o.tel, mand: o.mand || null, beloning: o.beloning || "" });
+        if (String(o.tel || "").replace(/\D/g, "") === telDigits) uit.push({ order_id: o.order_id, tijd: o.tijd, bestelling: o.bestelling, totaal: o.totaal, afhaal: o.afhaal, afgehaald: !!o.afgehaald, tel: o.tel, email: o.email || "", mand: o.mand || null, beloning: o.beloning || "" });
       } catch (e) {}
     }
     uit.sort((a, b) => String(b.tijd).localeCompare(String(a.tijd)));
