@@ -141,6 +141,9 @@ export default {
 
     const naam = String(d.naam || "").slice(0, 80).trim();
     const email = String(d.email || "").slice(0, 120).trim();
+    const straat = String(d.straat || "").slice(0, 120).trim();
+    const postcode = String(d.postcode || "").slice(0, 20).trim();
+    const plaats = String(d.plaats || "").slice(0, 80).trim();
     const tel = String(d.tel || "").slice(0, 30).trim();
     const bestelling = String(d.bestelling || "").slice(0, 4000);
     const telDigits = tel.replace(/\D/g, "");
@@ -199,7 +202,7 @@ export default {
     const id = (String(d.order_id || "").replace(/\D/g, "").slice(0, 8)) || String(Date.now()).slice(-6);
     const nu = new Date().toISOString();
     const order = {
-      order_id: id, tijd: nu, naam, tel, email, bestelling,
+      order_id: id, tijd: nu, naam, tel, email, straat, postcode, plaats, bestelling,
       totaal: eindTotaal,
       betaling: belBetaling,
       opmerking: String(d.opmerking || "").slice(0, 1000),
@@ -215,7 +218,8 @@ export default {
     const pad = `bestellingen/${nu.slice(0, 10)}-${id}.json`;
     const ghOk = await putGitHub(env, pad, order, `Bestelling #${id} (${naam})`);
 
-    try { await putGitHub(env, `klant-tokens/${klanttoken}.json`, { telDigits, tel, naam, taal: order.taal || (tokenRec && tokenRec.taal) || "", beloningGebruikt: ((tokenRec && tokenRec.beloningGebruikt) || 0) + (order.beloning ? 1 : 0), belRechten: belRechten, spaarLid: spaarLid, kaartCap: kaartCap, aangemaakt: (tokenRec && tokenRec.aangemaakt) || nu }, "Klant-token"); } catch (e) {}
+    try { const _tk = Object.assign({}, tokenRec || {}, { telDigits, tel, naam, taal: order.taal || (tokenRec && tokenRec.taal) || "", beloningGebruikt: ((tokenRec && tokenRec.beloningGebruikt) || 0) + (order.beloning ? 1 : 0), belRechten: belRechten, spaarLid: spaarLid, kaartCap: kaartCap, aangemaakt: (tokenRec && tokenRec.aangemaakt) || nu }); if (email) _tk.email = email; if (straat) _tk.straat = straat; if (postcode) _tk.postcode = postcode; if (plaats) _tk.plaats = plaats; await putGitHub(env, `klant-tokens/${klanttoken}.json`, _tk, "Klant-token"); } catch (e) {}
+    if (straat || postcode || plaats || email) { try { await updateKlantJson(env, telDigits, { naam: naam, tel: tel, email: email || undefined, straat: straat || undefined, postcode: postcode || undefined, plaats: plaats || undefined }); } catch (e) {} }
     // Telefoon->token-index, zodat beheer een klant een persoonlijke inloglink kan sturen
     let nieuweKlant = false;
     try { const idx = (await leesJson(env, "klant-token-index.json")) || {}; nieuweKlant = !idx[telDigits]; if (idx[telDigits] !== klanttoken) { idx[telDigits] = klanttoken; await putGitHub(env, "klant-token-index.json", idx, "token-index"); } } catch (e) {}
