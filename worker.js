@@ -64,11 +64,14 @@ export default {
       const nieuwTelD = nieuwTel.replace(/\D/g, "");
       const oudTelD = String(rec.telDigits || "").replace(/\D/g, "");
       const telGewijzigd = !!(nieuwTelD && nieuwTelD !== oudTelD);
-      const nieuw = Object.assign({}, rec, { naam: naam || rec.naam || "", email: email });
+      const adres = String(d.adres || "").slice(0, 200).trim();
+      const pittig = (d.pittig === "" || d.pittig === null || d.pittig === undefined) ? null : Math.max(0, Math.min(4, parseInt(d.pittig, 10) || 0));
+      const nieuw = Object.assign({}, rec, { naam: naam || rec.naam || "", email: email, adres: adres });
+      if (pittig !== null) nieuw.pittig = pittig; else delete nieuw.pittig;
       if (telGewijzigd) { nieuw.telDigits = nieuwTelD; nieuw.tel = nieuwTel; }
       await putGitHub(env, `klant-tokens/${token}.json`, nieuw, "Profiel bijgewerkt (klant)");
       if (telGewijzigd) { try { await herKeyOrders(env, oudTelD, nieuwTel, naam); } catch (e) {} }
-      return json({ ok: true, naam: nieuw.naam, tel: nieuw.tel || rec.tel || "", email: email, telGewijzigd: telGewijzigd }, 200, cors);
+      return json({ ok: true, naam: nieuw.naam, tel: nieuw.tel || rec.tel || "", email: email, adres: adres, pittig: (typeof nieuw.pittig === "number") ? nieuw.pittig : null, telGewijzigd: telGewijzigd }, 200, cors);
     }
     if (d && d.soort === "account") {
       const token = String(d.token || "").replace(/[^A-Za-z0-9]/g, "").slice(0, 48);
@@ -98,7 +101,7 @@ export default {
           }
         }
       } catch (e) {}
-      return json({ ok: true, naam: rec.naam || "", tel: rec.tel || (orders[0] && orders[0].tel) || "", email: rec.email || "", taal: rec.taal || "", beloningGebruikt: rec.beloningGebruikt || 0, puntenBonus: puntBonus, belRechten, spaarLid, kaartCap, token, deelcode: token.slice(0, 8), aantal: orders.length, bestellingen: orders }, 200, cors);
+      return json({ ok: true, naam: rec.naam || "", tel: rec.tel || (orders[0] && orders[0].tel) || "", email: rec.email || "", adres: rec.adres || "", pittig: (typeof rec.pittig === "number") ? rec.pittig : null, taal: rec.taal || "", beloningGebruikt: rec.beloningGebruikt || 0, puntenBonus: puntBonus, belRechten, spaarLid, kaartCap, token, deelcode: token.slice(0, 8), aantal: orders.length, bestellingen: orders }, 200, cors);
     }
 
     // --- Test-WhatsApp (alleen beheer: token moet toegang tot de repo hebben) ---
