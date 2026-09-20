@@ -133,7 +133,7 @@ export default {
       if (!mag) return json({ ok: false, fout: "geen toegang" }, 200, cors);
       const cfg = await callMeBotConfig(env);
       if (!cfg.phone || !cfg.apikey) return json({ ok: false, fout: "callmebot niet ingesteld" }, 200, cors);
-      try { await sendWhatsApp(env, "\uD83E\uDDEA Test-bericht van Pink Thai TakeAway \u2014 WhatsApp werkt!"); } catch (e) { return json({ ok: false, fout: "verzenden mislukt" }, 200, cors); }
+      try { const _t = await bouwOverzichtTekst(env); await sendWhatsApp(env, "\uD83E\uDDEA TEST \u2014 zo ziet het sluit-overzicht eruit:\n\n" + (_t || "(geen bestellingen)")); } catch (e) { return json({ ok: false, fout: "verzenden mislukt" }, 200, cors); }
       return json({ ok: true }, 200, cors);
     }
 
@@ -520,7 +520,7 @@ async function verwerkGemist(env) {
   }
   if (rest.length !== lijst.length) { try { await putGitHub(env, "gemiste-meldingen.json", rest, "gemiste meldingen verwerkt"); } catch (e) {} }
 }
-async function stuurOverzicht(env) {
+async function bouwOverzichtTekst(env) {
   const repo = env.GH_REPO, branch = env.GH_BRANCH || "main";
   if (!repo || !env.GH_TOKEN) return;
   const headers = { "Authorization": `Bearer ${env.GH_TOKEN}`, "Accept": "application/vnd.github+json", "User-Agent": "ptta-worker" };
@@ -551,8 +551,9 @@ async function stuurOverzicht(env) {
   } else {
     tekst = `\uD83D\uDD12 Bestellen gesloten \u2014 geen bestellingen`;
   }
-  try { await sendWhatsApp(env, tekst); } catch (e) {}
+  return tekst;
 }
+async function stuurOverzicht(env) { const t = await bouwOverzichtTekst(env); if (t) { try { await sendWhatsApp(env, t); } catch (e) {} } }
 
 // Wekelijkse opruiming: verwijdert AFGEHAALDE bestellingen ouder dan 90 dagen (openstaande blijven altijd staan)
 async function ruimOudeOrders(env) {
