@@ -526,12 +526,30 @@ async function stuurOverzicht(env) {
   const headers = { "Authorization": `Bearer ${env.GH_TOKEN}`, "Accept": "application/vnd.github+json", "User-Agent": "ptta-worker" };
   let lijst = [];
   try { const r = await fetch(`https://api.github.com/repos/${repo}/contents/bestellingen?ref=${branch}`, { headers }); if (r.ok) lijst = await r.json(); } catch (e) {}
-  let open = 0; const regels = [];
+  let open = 0; const regels = []; let totaal = 0; const gerechten = {};
   for (const f of (Array.isArray(lijst) ? lijst : [])) {
     if (!f.name || !f.name.endsWith(".json") || !f.download_url) continue;
-    try { const o = await (await fetch(f.download_url)).json(); if (o && !o.afgehaald) { open++; regels.push(`${o.ingevroren ? "\u2744\uFE0F " : ""}#${o.order_id} ${o.naam} — ${o.totaal}`); } } catch (e) {}
+    try {
+      const o = await (await fetch(f.download_url)).json();
+      if (o && !o.afgehaald) {
+        open++;
+        regels.push(`${o.ingevroren ? "\u2744\uFE0F " : ""}#${o.order_id} ${o.naam} — ${o.totaal}`);
+        totaal += bedragParse(o.totaal);
+        String(o.bestelling || "").split("\n").forEach(function (regel) {
+          const m = regel.match(/^\s*(\d+)\s*[x\u00d7]\s*(.+?)\s*(?:\u2014|-)\s*\u20ac/);
+          if (m) { const q = parseInt(m[1], 10) || 1; const naam = m[2].trim(); gerechten[naam] = (gerechten[naam] || 0) + q; }
+        });
+      }
+    } catch (e) {}
   }
-  const tekst = open ? `\uD83D\uDD12 Bestellen gesloten — ${open} bestelling(en)\n` + regels.join("\n") : `\uD83D\uDD12 Bestellen gesloten — geen bestellingen`;
+  let tekst;
+  if (open) {
+    tekst = `\uD83D\uDD12 Bestellen gesloten \u2014 ${open} bestelling(en) \u00b7 totaal ${euro(totaal)}\n` + regels.join("\n");
+    const items = Object.keys(gerechten).sort(function (a, b) { return gerechten[b] - gerechten[a]; });
+    if (items.length) { tekst += "\n\n\uD83C\uDF73 Te maken:\n" + items.map(function (n) { return gerechten[n] + "\u00d7 " + n; }).join("\n"); }
+  } else {
+    tekst = `\uD83D\uDD12 Bestellen gesloten \u2014 geen bestellingen`;
+  }
   try { await sendWhatsApp(env, tekst); } catch (e) {}
 }
 
