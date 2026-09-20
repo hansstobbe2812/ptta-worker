@@ -133,7 +133,7 @@ export default {
       if (!mag) return json({ ok: false, fout: "geen toegang" }, 200, cors);
       const cfg = await callMeBotConfig(env);
       if (!cfg.phone || !cfg.apikey) return json({ ok: false, fout: "callmebot niet ingesteld" }, 200, cors);
-      try { const _t = await bouwOverzichtTekst(env); await sendWhatsApp(env, "\uD83E\uDDEA TEST \u2014 zo ziet het sluit-overzicht eruit:\n\n" + (_t || "(geen bestellingen)")); } catch (e) { return json({ ok: false, fout: "verzenden mislukt" }, 200, cors); }
+      try { await sendWhatsApp(env, "\uD83E\uDDEA TEST \u2014 voorbeeld van het sluit-overzicht (fictieve gegevens):\n\n\uD83D\uDD12 Bestellen gesloten \u2014 3 bestelling(en) \u00b7 totaal \u20ac 55,00\n\n\uD83D\uDCCB Per klant:\n#12345 Anna \u2014 \u20ac 30,00\n  1\u00d7 #9 Panang (Kip) (pittig: Mild)\n  1\u00d7 #19 Ananas Gebakken Rijst (Garnalen) (pittig: Mild)\n\n#12346 Bram \u2014 \u20ac 15,00\n  1\u00d7 #14 Cashew (Kip) (pittig: Medium)\n\n#12347 Chai \u2014 \u20ac 10,00\n  1\u00d7 #7 Kuaitiao Kai (soep)\n\n\uD83C\uDF73 Te maken (totaal):\n1\u00d7 #9 Panang (Kip) (pittig: Mild)\n1\u00d7 #19 Ananas Gebakken Rijst (Garnalen) (pittig: Mild)\n1\u00d7 #14 Cashew (Kip) (pittig: Medium)\n1\u00d7 #7 Kuaitiao Kai (soep)"); } catch (e) { return json({ ok: false, fout: "verzenden mislukt" }, 200, cors); }
       return json({ ok: true }, 200, cors);
     }
 
