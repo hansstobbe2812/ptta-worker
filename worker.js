@@ -533,7 +533,8 @@ async function stuurOverzicht(env) {
       const o = await (await fetch(f.download_url)).json();
       if (o && !o.afgehaald) {
         open++;
-        regels.push(`${o.ingevroren ? "\u2744\uFE0F " : ""}#${o.order_id} ${o.naam} — ${o.totaal}`);
+        const dishLines = String(o.bestelling || "").split("\n").map(function (r) { r = r.trim(); return r ? ("  " + r.replace(/\s*(?:\u2014|-)\s*\u20ac.*$/, "")) : ""; }).filter(Boolean);
+        regels.push(`${o.ingevroren ? "\u2744\uFE0F " : ""}#${o.order_id} ${o.naam} — ${o.totaal}` + (dishLines.length ? "\n" + dishLines.join("\n") : ""));
         totaal += bedragParse(o.totaal);
         String(o.bestelling || "").split("\n").forEach(function (regel) {
           const m = regel.match(/^\s*(\d+)\s*[x\u00d7]\s*(.+?)\s*(?:\u2014|-)\s*\u20ac/);
@@ -544,9 +545,9 @@ async function stuurOverzicht(env) {
   }
   let tekst;
   if (open) {
-    tekst = `\uD83D\uDD12 Bestellen gesloten \u2014 ${open} bestelling(en) \u00b7 totaal ${euro(totaal)}\n` + regels.join("\n");
+    tekst = `\uD83D\uDD12 Bestellen gesloten \u2014 ${open} bestelling(en) \u00b7 totaal ${euro(totaal)}\n\n\uD83D\uDCCB Per klant:\n` + regels.join("\n\n");
     const items = Object.keys(gerechten).sort(function (a, b) { return gerechten[b] - gerechten[a]; });
-    if (items.length) { tekst += "\n\n\uD83C\uDF73 Te maken:\n" + items.map(function (n) { return gerechten[n] + "\u00d7 " + n; }).join("\n"); }
+    if (items.length) { tekst += "\n\n\uD83C\uDF73 Te maken (totaal):\n" + items.map(function (n) { return gerechten[n] + "\u00d7 " + n; }).join("\n"); }
   } else {
     tekst = `\uD83D\uDD12 Bestellen gesloten \u2014 geen bestellingen`;
   }
