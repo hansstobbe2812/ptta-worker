@@ -45,6 +45,7 @@ export default {
         klant: !!d.klanttoken,
         land: String(cf.country || "").slice(0, 4),
         plaats: String(cf.city || "").slice(0, 60),
+        provider: String(cf.asOrganization || "").slice(0, 60),
         open: (typeof d.open === "boolean") ? d.open : null,
         bot: _isBot,
       };
