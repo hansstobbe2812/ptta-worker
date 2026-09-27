@@ -34,6 +34,11 @@ export default {
       const _botUa = !_ua || /bot|crawl|spider|slurp|headless|phantom|python|curl|wget|scan|monitor|preview|lighthouse|pagespeed|semrush|ahrefs|facebookexternalhit|whatsapp/.test(_ua);
       const _dc = ["amazon","aws","google","microsoft","azure","hetzner","ovh","digitalocean","linode","akamai","leaseweb","contabo","vultr","alibaba","tencent","oracle","scaleway","fastly","m247","choopa","datacamp","censys","shodan","palo alto"];
       const _isBot = _botUa || _dc.some(function(o){ return _org.indexOf(o) >= 0; });
+      const _dev = (function(u){
+        const os = /iphone/.test(u)?"iPhone":/ipad/.test(u)?"iPad":/android/.test(u)?"Android":/windows nt/.test(u)?"Windows":(/mac os x|macintosh/.test(u)?"Mac":(/linux/.test(u)?"Linux":""));
+        const br = /edg(a|ios|)\//.test(u)?"Edge":(/opr\/|opera/.test(u)?"Opera":(/samsungbrowser/.test(u)?"Samsung Internet":(/firefox|fxios/.test(u)?"Firefox":(/crios|chrome|chromium/.test(u)?"Chrome":(/safari/.test(u)?"Safari":"")))));
+        return [os, br].filter(Boolean).join(" \u00b7 ");
+      })(_ua);
       const visit = {
         tijd: nu.toISOString(),
         vid: String(d.vid || "").replace(/[^A-Za-z0-9]/g, "").slice(0, 64),
@@ -46,6 +51,7 @@ export default {
         land: String(cf.country || "").slice(0, 4),
         plaats: String(cf.city || "").slice(0, 60),
         provider: String(cf.asOrganization || "").slice(0, 60),
+        device: _dev.slice(0, 60),
         open: (typeof d.open === "boolean") ? d.open : null,
         bot: _isBot,
       };
