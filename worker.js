@@ -52,6 +52,7 @@ export default {
         plaats: String(cf.city || "").slice(0, 60),
         provider: String(cf.asOrganization || "").slice(0, 60),
         device: _dev.slice(0, 60),
+        ip: String(request.headers.get("CF-Connecting-IP") || "").slice(0, 45),
         open: (typeof d.open === "boolean") ? d.open : null,
         bot: _isBot,
       };
